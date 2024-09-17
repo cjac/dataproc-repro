@@ -49,9 +49,7 @@ tune your environment.  The code in env.sh is sourced and executed at
 the head of many scripts in this suite to ensure that the environment
 is tuned for use with this reproduction.
 
-<section class="tabs">
-
-#### Dataproc on GKE {.new-tab}
+#### Dataproc on GKE
 
 To tune the reproduction environment for your (customer's) GKE use case, review
 the `create_gke_cluster` bash function in the `shared-functions.sh` file.  This
@@ -82,8 +80,6 @@ If you ever need to delete the environment, you can run `bash destroy-dpgke.sh`
 ; this will delete the dpgke cluster, remove the firewall rules, subnet, NAT,
 router, VPC network, and staging bucket.  You can plan to run `bash
 create-dpgke.sh` once more after `destroy-dpgke.sh` completes successfully.
-
-</section>
 
 ### Metadata store
 

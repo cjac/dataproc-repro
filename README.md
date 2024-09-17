@@ -49,9 +49,7 @@ tune your environment.  The code in env.sh is sourced and executed at
 the head of many scripts in this suite to ensure that the environment
 is tuned for use with this reproduction.
 
-<section class="tabs">
-
-#### Dataproc on GCE {.new-tab}
+#### Dataproc on GCE
 
 To tune the reproduction environment for your (customer's) GCE use case, review
 the `create_standard_cluster` bash function in the `shared-functions.sh` file.
