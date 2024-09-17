@@ -51,54 +51,39 @@ is tuned for use with this reproduction.
 
 <section class="tabs">
 
-#### Dataproc on GCE {.new-tab}
+#### Dataproc on GKE {.new-tab}
 
-To tune the reproduction environment for your (customer's) GCE use case, review
-the `create_standard_cluster` bash function in the `shared-functions.sh` file.
-This is where you can select which arguments are passed to `gcloud dataproc
-clusters create ${CLUSTER_NAME}` command.  There exist many examples in the
-comments of common use cases below the call to gcloud itself.
+To tune the reproduction environment for your (customer's) GKE use case, review
+the `create_gke_cluster` bash function in the `shared-functions.sh` file.  This
+is where you can select which arguments are passed to `gcloud container clusters
+create ${GKE_CLUSTER_NAME}` command.
 
 ## creation phase
 
-When reviewing shared-functions.sh, pay attention to the `--metadata
-startup-script="..."` and `--initialization-actions
-${INIT_ACTIONS_ROOT}/<script-name>` arguments.  These can be used to execute
-arbitrary code during the creation of Dataproc clusters.  Many of our cases
-relate to failures during either a) Dataproc's internal startup script, which
-runs after the `--metadata startup-script="..."`, or b) scripts passed using the
-`--initialization-actions` cluster creation argument.
-
-## creating the environment and cluster
-
-Once you have altered `env.json` and have reviewed the function names in
-`shared-functions.sh`, you can create your cluster environment and launch your
-cluster by running `bash create-command.sh`.  Do not plan to run this more than
-once for a single reproduction.
+Once you have altered `env.json` and `shared-functions.sh` you can create your
+cluster environment and launch your cluster by running `bash create-dpgke.sh`.
+Do not plan to run this more than once for a single reproduction.
 
 This will create the staging bucket, enable the required services, create a
 dedicated VPC network, router, NAT, subnet, firewall rules, and finally, the
 cluster itself.
 
-By default, your cluster will time out and be destroyed after 30 minutes of
-inactivity.  You can change this by altering the value of IDLE_TIMEOUT in
-`env.json`.  This saves our org operating costs on reproduction clusters which are
-not being used to actively reproduce problems.  It also gives you a half of an
-hour to do your work before worrying that your cluster will be brought down.
-
 ## recreating the cluster
 
 If your cluster has been destroyed, you can re-create it by running `bash
-recreate-only.sh`.  This script does not re-create any of the resources the
+recreate-dpgke.sh`.  This script does not re-create any of the resources the
 cluster depends on such as network, router, staging bucket, etc.  It only
-deletes and re-creates the cluster that's already been defined in `env.json`.
+deletes and re-creates the GKE cluster that's already been defined in
+`env.json`.
 
 ## deleting the environment and cluster
 
-If you ever need to delete the environment, you can run `bash
-destroy-command.sh` ; this will delete the cluster, remove the firewall rules,
-subnet, NAT, router, VPC network, and staging bucket.  You can plan to run `bash
-create-command.sh` once more after `destroy-command.sh` completes successfully.
+If you ever need to delete the environment, you can run `bash destroy-dpgke.sh`
+; this will delete the dpgke cluster, remove the firewall rules, subnet, NAT,
+router, VPC network, and staging bucket.  You can plan to run `bash
+create-dpgke.sh` once more after `destroy-dpgke.sh` completes successfully.
+
+</section>
 
 ### Metadata store
 
@@ -116,11 +101,13 @@ default, there are some attributes which are set for dataproc.  Some important
 ones follow:
 
 * attributes/dataproc-role
-- value: `Master` for master nodes
-- value: `Worker` for primary and secondary worker nodes
+- `Master` for master nodes
+- `Worker` for primary and secondary worker nodes
 * attributes/dataproc-cluster-name
 * attributes/dataproc-bucket
+* attributes/dataproc-bucket
 * attributes/dataproc-cluster-uuid
+* attributes/dataproc-region
 * attributes/dataproc-region
 * hostname (FQDN)
 * name (short hostname)
