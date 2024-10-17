@@ -19,7 +19,7 @@
 
 source env.sh
 
-delete_standard_cluster
+delete_dpgce_cluster
 
 delete_service_account
 

@@ -21,6 +21,7 @@ set -e
 
 
 source env.sh
+source shared-functions.sh
 
 set_cluster_name
 

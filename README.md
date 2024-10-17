@@ -52,7 +52,7 @@ is tuned for use with this reproduction.
 #### Dataproc on GCE
 
 To tune the reproduction environment for your (customer's) GCE use case, review
-the `create_standard_cluster` bash function in the `shared-functions.sh` file.
+the `create_dpgce_cluster` bash function in the `shared-functions.sh` file.
 This is where you can select which arguments are passed to `gcloud dataproc
 clusters create ${CLUSTER_NAME}` command.  There exist many examples in the
 comments of common use cases below the call to gcloud itself.

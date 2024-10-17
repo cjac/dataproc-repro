@@ -29,11 +29,11 @@ else
   exit 1
 fi
 
-# re-create normal dataproc cluster
-delete_standard_cluster
-create_standard_cluster
+# re-create dpgce dataproc cluster
+delete_dpgce_cluster
+create_dpgce_cluster
 
-echo "=================================="
-echo "General Purpose Cluster re-created"
-echo "=================================="
+echo "========================================"
+echo "General Purpose DPGCE Cluster re-created"
+echo "========================================"
 

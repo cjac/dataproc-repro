@@ -67,7 +67,7 @@ create_service_account
 
 create_autoscaling_policy
 
-create_standard_cluster
+create_dpgce_cluster
 
 # Perform some connectivity tests
 
