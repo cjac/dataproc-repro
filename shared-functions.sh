@@ -512,17 +512,19 @@ PRIV_DOMAIN=${PRIV_DOMAIN}
 DOMAIN=${DOMAIN}
 USER=${USER}
 
+https://cloud.google.com/billing/docs/how-to/billing-access
 
 Please be prepared to link the project ${PROJECT_ID} to the billing
-account ${BILLING_ACCOUNT}.  This may require a manager's credentials.
-The following command will be run in this next phase, and must be run
-as a user authorized to execute the command.  Please encode the
-principal with rights to modify billing details as PRIV_USER and
-PRIV_DOMAIN in your env.json file.
+account ${BILLING_ACCOUNT}.  The principal indicated by
+${PRIV_USER}@${PRIV_DOMAIN} must have roles/billing.admin as
+documented in above link.
+
+Please encode the principal with rights to modify billing details as
+PRIV_USER and PRIV_DOMAIN in your env.json file.
 
 If you have not yet done this, please cancel this operation (^C),
-modify your env.json file to include the principal user and domain,
-and then re-run this command.
+modify your env.json file to include the privileged principal user and
+domain, and then re-run this command.
 
 gcloud beta billing projects \
   link ${PROJECT_ID} --billing-account ${BILLING_ACCOUNT}
