@@ -17,6 +17,9 @@
 export PATH_SEPARATOR=";"
 export FOLDER_NUMBER="$(jq -r .FOLDER_NUMBER env.json)"
 export DOMAIN="$(jq -r .DOMAIN env.json)"
+export USER="$(jq -r .USER env.json)"
+export PRIV_DOMAIN="$(jq -r .PRIV_DOMAIN env.json)"
+export PRIV_USER="$(jq -r .PRIV_USER env.json)"
 export PROJECT_ID="$(jq -r .PROJECT_ID env.json)"
 if [[ "${PROJECT_ID}" == "ldap-example-yyyy-nn" ]]; then
   export PROJECT_ID="${USER}-example-$(date +%Y-%U)"
@@ -33,13 +36,13 @@ export REGION="$(jq -r .REGION env.json)"
 export ZONE="${REGION}-a"
 #export IMAGE_VERSION="2.0"
 #export IMAGE_VERSION="2.0-ubuntu18"
-#export IMAGE_VERSION="2.0-rocky8"
+export IMAGE_VERSION="2.0-rocky8"
 #export IMAGE_VERSION="2.0-debian10"
 #export IMAGE_VERSION="2.1"
 #export IMAGE_VERSION="2.1-ubuntu20"
 #export IMAGE_VERSION="2.1-rocky8"
 #export IMAGE_VERSION="2.1-debian11"
-export IMAGE_VERSION="2.1.66-debian11"
+#export IMAGE_VERSION="2.1.66-debian11"
 #export IMAGE_VERSION="2.2"
 #export IMAGE_VERSION="2.2.35-debian12"
 #export IMAGE_VERSION="2.2-ubuntu22"
@@ -158,6 +161,9 @@ export GKE_CLUSTER="projects/${PROJECT_ID}/locations/${ZONE}/clusters/${GKE_CLUS
 export DP_POOLNAME_DEFAULT=default-pool-${CLUSTER_NAME}
 export DP_POOLNAME_WORKER=worker-pool-${CLUSTER_NAME}
 
+export DP_CTRL_POOLNAME="ctrl-${CLUSTER_NAME}"
+export DP_DRIVER_POOLNAME="driver-${CLUSTER_NAME}"
+export DP_EXEC_POOLNAME="exec-${CLUSTER_NAME}"
 
 # Kerberos
 export KMS_KEYRING="keyring-${CLUSTER_NAME}"

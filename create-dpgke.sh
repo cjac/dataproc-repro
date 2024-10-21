@@ -48,9 +48,11 @@ create_service_account
 
 grant_gke_roles
 
+create_gke_cluster
+
 # Create gke dataproc cluster
 
-create_gke_cluster
+create_dpgke_cluster
 
 # Perform some connectivity tests
 

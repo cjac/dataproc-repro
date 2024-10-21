@@ -26,11 +26,23 @@ function enable_services () {
   set +x
 }
 
+REPRO_TMPDIR="$(mktemp -d /tmp/dataproc-repro-XXXXX)"
+function cleanup_repro_tmpdir() {
+  rm -rf "${REPRO_TMPDIR}"
+}
+
+function exit_handler() {
+  cleanup_repro_tmpdir
+}
+
+trap exit_handler EXIT
+
 function exists_dpgce_cluster() {
   set +x
-  DPGCE_CLUSTER="$(gcloud dataproc clusters list --format=json)"
+  test -f cluster-list.json || gcloud dataproc clusters list --format=json | dd of="${REPRO_TMPDIR}/cluster-list.json"
+  DPGCE_CLUSTER="$()"
   JQ_CMD=".[] | select(.clusterName | test(\"${CLUSTER_NAME}$\"))"
-  OUR_CLUSTER=$(echo ${DPGCE_CLUSTER} | jq -c "${JQ_CMD}")
+  OUR_CLUSTER=$(cat ${REPRO_TMPDIR}/cluster-list.json | jq -c "${JQ_CMD}")
 
   if [[ -z "${OUR_CLUSTER}" ]]; then
     return -1
@@ -42,11 +54,7 @@ function exists_dpgce_cluster() {
 
 #    cloud-dataproc-ci.googleapis.com \ # DPMS dependency?
 function create_dpgce_cluster() {
-
-  if exists_dpgce_cluster == 0; then
-    echo "dpgce cluster already exists"
-    return 0
-  fi
+  [[ exists_dpgce_cluster == 0 ]] && echo "dpgce cluster already exists" && return 0
 
   set -x
 
@@ -59,7 +67,7 @@ function create_dpgce_cluster() {
     --num-workers=2 \
     --master-boot-disk-size 100 \
     --worker-boot-disk-size 100 \
-    --secondary-worker-boot-disk-size 50 \
+    --secondary-worker-boot-disk-size 65 \
     --master-machine-type "${MASTER_MACHINE_TYPE}" \
     --worker-machine-type "${PRIMARY_MACHINE_TYPE}" \
     --master-accelerator "type=${MASTER_ACCELERATOR_TYPE}" \
@@ -79,12 +87,13 @@ function create_dpgce_cluster() {
     --metadata "secret_project=${secret_project}" \
     --metadata "secret_version=${secret_version}" \
     --metadata "modulus_md5sum=${modulus_md5sum}" \
-    --metadata dask-runtime="yarn" \
+    --metadata dask-runtime="standalone" \
     --metadata bigtable-instance=${BIGTABLE_INSTANCE} \
     --metadata rapids-runtime="DASK" \
     --metadata cuda-version="${CUDA_VERSION}" \
+    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-0-rocky8-2024-10-21-19-29" \
+    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh" \
     --initialization-action-timeout=90m \
-    --image-version "${IMAGE_VERSION}" \
     --optional-components DOCKER \
     --max-idle="${IDLE_TIMEOUT}" \
     --scopes 'https://www.googleapis.com/auth/cloud-platform,sql-admin'
@@ -93,6 +102,8 @@ function create_dpgce_cluster() {
 
 }
 
+#    --image-version "${IMAGE_VERSION}" \
+#    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
 #    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh,${INIT_ACTIONS_ROOT}/rapids/rapids.sh" \
 #    --metadata dask-runtime="yarn" \
@@ -440,9 +451,9 @@ function create_dpgce_cluster() {
 function delete_dpgce_cluster() {
   set -x
   if exists_dpgce_cluster == 0; then
-    echo "standard cluster exists"
+    echo "dpgce cluster exists"
   else
-    echo "standard cluster does not exist.  Not deleting"
+    echo "dpgce cluster does not exist.  Not deleting"
     set +x
     return 0
   fi
@@ -494,30 +505,38 @@ function create_project(){
     if [[ -z "${PRJBA}" ]]; then
       set +x
       echo "
+The following variable values were read from env.json
+PROJECT_ID=${PROJECT_ID}
+BILLING_ACCOUNT=${BILLING_ACCOUNT}
+PRIV_DOMAIN=${PRIV_DOMAIN}
+DOMAIN=${DOMAIN}
+USER=${USER}
 
-          In order to connect a billing account with your new project, you will
-          need to temporariliy grant your ${USER}@google.com account the
-          roles/billing.admin role for the premium-cloud-support.com org.  After
-          reviewing the documentation[1], visit the PCS Command center[2] and
-          enter your justification type, justification ID and your @google.com
-          email.  Select 'Other (Fill in Other Role field)' for 'Role', and
-          enter 'roles/billing.admin' into the 'Other Role' field.  See the
-          screenshot[3] for an example.
 
-          Once this has been completed, prepare to log in with your @google.com
-          account, and then press enter.
+Please be prepared to link the project ${PROJECT_ID} to the billing
+account ${BILLING_ACCOUNT}.  This may require a manager's credentials.
+The following command will be run in this next phase, and must be run
+as a user authorized to execute the command.  Please encode the
+principal with rights to modify billing details as PRIV_USER and
+PRIV_DOMAIN in your env.json file.
 
-          [1] https://g3doc.corp.google.com/company/gfw/support/cloud/processes/new-hires/gcp-resources/premium-support-acc.md#granting-iam-roles-on-organization-iam-policy-only-when-needed
-          [2] https://support-gcp-admin.googleplex.com/grantiam
-          [3] https://screenshot.googleplex.com/9xUWEefmSVN2GZC
+If you have not yet done this, please cancel this operation (^C),
+modify your env.json file to include the principal user and domain,
+and then re-run this command.
 
+gcloud beta billing projects \
+  link ${PROJECT_ID} --billing-account ${BILLING_ACCOUNT}
+
+once you have credentials to run the above command,
+
+Press enter > 
 "
       read
 
       local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-      while [[ $active_account != "${USER}@google.com" ]]; do
-        echo "AUTHENTICATE AS YOUR @google.com EMAIL ADDRESS"
-        gcloud auth login ${USER}@google.com
+      while [[ $active_account != "${USER}@${PRIV_DOMAIN}" ]]; do
+        echo "AUTHENTICATE AS A USER WITH PRIVILEGES TO LINK THESE PROJECTS"
+        gcloud auth login ${USER}@${PRIV_DOMAIN}
         local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
       done
 
@@ -529,13 +548,13 @@ function create_project(){
         exit -1
       fi
 
-      echo "Prepare to log in with your @premium-cloud-support.com account and then press enter..."
+      echo "Prepare to log in with your @${DOMAIN} account and then press enter..."
       read
 
       local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-      while [[ $active_account != "${USER}@premium-cloud-support.com" ]]; do
-        echo "AUTHENTICATE AS YOUR @premium-cloud-support.com EMAIL ADDRESS"
-        gcloud auth login ${USER}@premium-cloud-support.com
+      while [[ $active_account != "${USER}@${DOMAIN}" ]]; do
+        echo "AUTHENTICATE AS YOUR @${DOMAIN} EMAIL ADDRESS"
+        gcloud auth login ${USER}@${DOMAIN}
         local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
       done
     fi
@@ -547,16 +566,16 @@ function create_project(){
 function delete_project() {
   set -x
   local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-  while [[ $active_account != "${USER}@google.com" ]]; do
-    echo "AUTHENTICATE AS YOUR @google.com EMAIL ADDRESS"
-    gcloud auth login ${USER}@google.com
+  while [[ $active_account != "${USER}@${PRIV_DOMAIN}" ]]; do
+    echo "AUTHENTICATE AS YOUR @${PRIV_DOMAIN} EMAIL ADDRESS"
+    gcloud auth login ${USER}@${PRIV_DOMAIN}
     local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
   done
   gcloud beta billing projects unlink ${PROJECT_ID}
   local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-  while [[ $active_account != "${USER}@premium-cloud-support.com" ]]; do
-    echo "AUTHENTICATE AS YOUR @premium-cloud-support.com EMAIL ADDRESS"
-    gcloud auth login ${USER}@premium-cloud-support.com
+  while [[ $active_account != "${USER}@${DOMAIN}" ]]; do
+    echo "AUTHENTICATE AS YOUR @${DOMAIN} EMAIL ADDRESS"
+    gcloud auth login ${USER}@${DOMAIN}
     local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
   done
   gcloud projects delete --quiet ${PROJECT_ID}
@@ -767,6 +786,10 @@ function delete_phs_cluster() {
 
 function create_service_account() {
   set -x
+  if gcloud iam service-accounts describe "${GSA}" > /dev/null ; then
+    echo "service account ${SA_NAME} already exists"
+    return 0 ; fi
+
   gcloud iam service-accounts create "${SA_NAME}" \
     --description="Service account for use with cluster ${CLUSTER_NAME}" \
     --display-name="${SA_NAME}"
@@ -816,7 +839,7 @@ function delete_service_account() {
     --member="serviceAccount:${GSA}" \
     "${PROJECT_ID}"
 
-  gcloud iam service-accounts delete --quiet ${GSA}
+  gcloud iam service-accounts delete --quiet "${GSA}"
 
   set +x
   echo "service account deleted"
@@ -844,12 +867,12 @@ function grant_gke_roles(){
     gcloud iam service-accounts add-iam-policy-binding \
       --role=roles/iam.workloadIdentityUser \
       --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${DPGKE_NAMESPACE}/${svc}]" \
-      "${GSA}"
+      "${GSA}" > /dev/null
   done
-    gcloud artifacts repositories add-iam-policy-binding "${ARTIFACT_REPOSITORY}" \
+  echo gcloud artifacts repositories add-iam-policy-binding "${ARTIFACT_REPOSITORY}" \
       --location="${REGION}" \
       --member="serviceAccount:${GSA}" \
-      --role=roles/artifactregistry.writer
+      --role=roles/artifactregistry.writer > /dev/null
   set +x
   echo "dpgke service account roles granted"
 }
@@ -857,12 +880,44 @@ function grant_gke_roles(){
 function create_gke_cluster() {
   set -x
 
-  gcloud container clusters create ${GKE_CLUSTER_NAME} \
-    --service-account=${GSA} \
-    --workload-pool=${PROJECT_ID}.svc.id.goog \
-    --tags ${TAGS} \
-    --subnetwork ${SUBNET} \
-    --network ${NETWORK}
+  if gcloud container clusters describe "${GKE_CLUSTER_NAME}" > /dev/null ; then
+    echo "GKE cluster ${GKE_CLUSTER_NAME} already exists"
+  else
+    gcloud container clusters create "${GKE_CLUSTER_NAME}" \
+      --service-account="${GSA}" \
+      --workload-pool="${PROJECT_ID}.svc.id.goog" \
+      --tags ${TAGS} \
+      --subnetwork ${SUBNET} \
+      --network ${NETWORK}
+  fi
+
+  # Create node pool for control
+  gcloud container node-pools describe "${DP_CTRL_POOLNAME}" \
+    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+    && echo "nodepool ${DP_CTRL_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  || gcloud container node-pools create "${DP_CTRL_POOLNAME}" \
+    --machine-type="e2-standard-4" \
+    --zone "${ZONE}" \
+    --cluster "${GKE_CLUSTER_NAME}"
+
+  # Create node pool for drivers
+  gcloud container node-pools describe "${DP_DRIVER_POOLNAME}" \
+    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+    && echo "nodepool ${DP_DRIVER_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  || gcloud container node-pools create "${DP_DRIVER_POOLNAME}" \
+    --machine-type="n2-standard-4" \
+    --zone "${ZONE}" \
+    --cluster "${GKE_CLUSTER_NAME}"
+
+  # Create node pool for executors
+  gcloud container node-pools describe "${DP_EXEC_POOLNAME}" \
+    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+    && echo "nodepool ${DP_EXEC_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  || gcloud container node-pools create "${DP_EXEC_POOLNAME}" \
+    --machine-type="n2-standard-8" \
+    --zone "${ZONE}" \
+    --cluster "${GKE_CLUSTER_NAME}"
+
 
   set +x
   echo "gke cluster created"
@@ -873,25 +928,29 @@ function delete_gke_cluster() {
 
   gcloud container clusters delete --quiet ${GKE_CLUSTER_NAME} --zone ${ZONE}
 
-  gcloud container node-pools delete --quiet ${DP_POOLNAME_DEFAULT} \
-    --zone ${ZONE} \
-    --cluster ${GKE_CLUSTER_NAME}
+  for pn in "${DP_CTRL_POOLNAME}" "${DP_DRIVER_POOLNAME}" "${DP_EXEC_POOLNAME}" ; do
+    gcloud container node-pools delete --quiet ${pn} \
+      --zone ${ZONE} \
+      --cluster ${GKE_CLUSTER_NAME}
+  done
 
   set +x
   echo "gke cluster deleted"
 }
 
+# https://cloud.google.com/dataproc/docs/guides/dpgke/dataproc-gke-nodepools#node_pool_settings
 function create_dpgke_cluster() {
   set -x
-  gcloud dataproc clusters gke ${DPGKE_CLUSTER_NAME} \
-   --region=${REGION} \
-   --gke-cluster="${GKE_CLUSTER_NAME}" \
-   --spark-engine-version=latest \
-   --pools="name=high-mem,roles=default" \
-   --setup-workload-identity \
-   --project "${PROJECT_ID}" \
-   --pools='name=dp-default,roles=default,machineType=e2-standard-4' \
-   --properties="spark:spark.kubernetes.container.image=${REGION}-docker.pkg.dev/${PROJECT_ID}/dockerfile-dataproc/dockerfile:latest"
+  gcloud dataproc clusters gke create "${DPGKE_CLUSTER_NAME}" \
+    --region=${REGION} \
+    --gke-cluster=${GKE_CLUSTER} \
+    --spark-engine-version=latest \
+    --staging-bucket=${BUCKET} \
+    --setup-workload-identity \
+    --properties="spark:spark.kubernetes.container.image=${REGION}-docker.pkg.dev/${PROJECT_ID}/dockerfile-dataproc/dockerfile:latest" \
+    --pools="name=${DP_CTRL_POOLNAME},roles=default,machineType=e2-standard-4" \
+    --pools="name=${DP_DRIVER_POOLNAME},min=1,max=3,roles=spark-driver,machineType=n2-standard-4" \
+    --pools="name=${DP_EXEC_POOLNAME},min=1,max=10,roles=spark-executor,machineType=n2-standard-8"
   set +x
   echo "dpgke cluster created"
 }
@@ -906,7 +965,7 @@ source lib/database-functions.sh
 source lib/net-functions.sh
 
 function create_bucket () {
-  if gsutil ls -d gs://${BUCKET} ; then
+  if gsutil ls -b "gs://${BUCKET}" ; then
     echo "bucket already exists, skipping creation."
     return
   fi
