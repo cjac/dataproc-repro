@@ -893,32 +893,32 @@ function create_gke_cluster() {
       --network ${NETWORK}
   fi
 
-  # Create node pool for control
-  gcloud container node-pools describe "${DP_CTRL_POOLNAME}" \
-    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
-    && echo "nodepool ${DP_CTRL_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
-  || gcloud container node-pools create "${DP_CTRL_POOLNAME}" \
-    --machine-type="e2-standard-4" \
-    --zone "${ZONE}" \
-    --cluster "${GKE_CLUSTER_NAME}"
+  # # Create node pool for control
+  # echo gcloud container node-pools describe "${DP_CTRL_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_CTRL_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_CTRL_POOLNAME}" \
+  #   --machine-type="e2-standard-4" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
 
-  # Create node pool for drivers
-  gcloud container node-pools describe "${DP_DRIVER_POOLNAME}" \
-    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
-    && echo "nodepool ${DP_DRIVER_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
-  || gcloud container node-pools create "${DP_DRIVER_POOLNAME}" \
-    --machine-type="n2-standard-4" \
-    --zone "${ZONE}" \
-    --cluster "${GKE_CLUSTER_NAME}"
+  # # Create node pool for drivers
+  # echo gcloud container node-pools describe "${DP_DRIVER_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_DRIVER_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_DRIVER_POOLNAME}" \
+  #   --machine-type="n2-standard-4" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
 
-  # Create node pool for executors
-  gcloud container node-pools describe "${DP_EXEC_POOLNAME}" \
-    --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
-    && echo "nodepool ${DP_EXEC_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
-  || gcloud container node-pools create "${DP_EXEC_POOLNAME}" \
-    --machine-type="n2-standard-8" \
-    --zone "${ZONE}" \
-    --cluster "${GKE_CLUSTER_NAME}"
+  # # Create node pool for executors
+  # echo gcloud container node-pools describe "${DP_EXEC_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_EXEC_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_EXEC_POOLNAME}" \
+  #   --machine-type="n2-standard-8" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
 
 
   set +x
@@ -928,13 +928,13 @@ function create_gke_cluster() {
 function delete_gke_cluster() {
   set -x
 
-  gcloud container clusters delete --quiet ${GKE_CLUSTER_NAME} --zone ${ZONE}
-
   for pn in "${DP_CTRL_POOLNAME}" "${DP_DRIVER_POOLNAME}" "${DP_EXEC_POOLNAME}" ; do
     gcloud container node-pools delete --quiet ${pn} \
       --zone ${ZONE} \
       --cluster ${GKE_CLUSTER_NAME}
   done
+
+  gcloud container clusters delete --quiet ${GKE_CLUSTER_NAME} --zone ${ZONE}
 
   set +x
   echo "gke cluster deleted"
