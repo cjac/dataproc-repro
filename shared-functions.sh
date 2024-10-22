@@ -21,15 +21,28 @@ function enable_services () {
   gcloud services enable \
     dataproc.googleapis.com \
     compute.googleapis.com \
+    secretmanager.googleapis.com \
     --project=${PROJECT_ID}
   set +x
 }
 
-function exists_standard_cluster() {
+REPRO_TMPDIR="$(mktemp -d /tmp/dataproc-repro-XXXXX)"
+function cleanup_repro_tmpdir() {
+  rm -rf "${REPRO_TMPDIR}"
+}
+
+function exit_handler() {
+  cleanup_repro_tmpdir
+}
+
+trap exit_handler EXIT
+
+function exists_dpgce_cluster() {
   set +x
-  STANDARD_CLUSTER="$(gcloud dataproc clusters list --format=json)"
+  test -f cluster-list.json || gcloud dataproc clusters list --format=json | dd of="${REPRO_TMPDIR}/cluster-list.json"
+  DPGCE_CLUSTER="$()"
   JQ_CMD=".[] | select(.clusterName | test(\"${CLUSTER_NAME}$\"))"
-  OUR_CLUSTER=$(echo ${STANDARD_CLUSTER} | jq -c "${JQ_CMD}")
+  OUR_CLUSTER=$(cat ${REPRO_TMPDIR}/cluster-list.json | jq -c "${JQ_CMD}")
 
   if [[ -z "${OUR_CLUSTER}" ]]; then
     return -1
@@ -40,24 +53,21 @@ function exists_standard_cluster() {
 }
 
 #    cloud-dataproc-ci.googleapis.com \ # DPMS dependency?
-function create_standard_cluster() {
+function create_dpgce_cluster() {
+  [[ exists_dpgce_cluster == 0 ]] && echo "dpgce cluster already exists" && return 0
 
-  if exists_standard_cluster == 0; then
-    echo "standard cluster already exists"
-    return 0
-  fi
-
-  set -x  
+  set -x
 
   date
   time gcloud dataproc clusters create ${CLUSTER_NAME} \
     --master-boot-disk-type           pd-ssd \
     --worker-boot-disk-type           pd-ssd \
     --secondary-worker-boot-disk-type pd-ssd \
-    --single-node \
+    --num-masters=1 \
+    --num-workers=2 \
     --master-boot-disk-size 100 \
     --worker-boot-disk-size 100 \
-    --secondary-worker-boot-disk-size 50 \
+    --secondary-worker-boot-disk-size 65 \
     --master-machine-type "${MASTER_MACHINE_TYPE}" \
     --worker-machine-type "${PRIMARY_MACHINE_TYPE}" \
     --master-accelerator "type=${MASTER_ACCELERATOR_TYPE}" \
@@ -72,26 +82,36 @@ function create_standard_cluster() {
     --enable-component-gateway \
     --metadata "install-gpu-agent=true" \
     --metadata "gpu-driver-provider=NVIDIA" \
-    --metadata "public_secret_name=efi-db-pub-key-042" \
-    --metadata "private_secret_name=efi-db-priv-key-042" \
-    --metadata "secret_project=${PROJECT_ID}" \
-    --metadata "secret_version=1" \
-    --metadata "modulus_md5sum=d41d8cd98f00b204e9800998ecf8427e" \
-    --metadata dask-runtime="yarn" \
+    --metadata "public_secret_name=${public_secret_name}" \
+    --metadata "private_secret_name=${private_secret_name}" \
+    --metadata "secret_project=${secret_project}" \
+    --metadata "secret_version=${secret_version}" \
+    --metadata "modulus_md5sum=${modulus_md5sum}" \
+    --metadata dask-runtime="standalone" \
     --metadata bigtable-instance=${BIGTABLE_INSTANCE} \
-    --metadata rapids-runtime="SPARK" \
-    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
+    --metadata rapids-runtime="DASK" \
+    --metadata cuda-version="${CUDA_VERSION}" \
+    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-0-rocky8-2024-10-21-19-29" \
+    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh" \
     --initialization-action-timeout=90m \
-    --metadata "bigtable-instance=${BIGTABLE_INSTANCE}" \
-    --no-shielded-secure-boot \
-    --image-version "${IMAGE_VERSION}" \
+    --optional-components DOCKER \
     --max-idle="${IDLE_TIMEOUT}" \
     --scopes 'https://www.googleapis.com/auth/cloud-platform,sql-admin'
   date
   set +x
-  
+
 }
 
+#    --image-version "${IMAGE_VERSION}" \
+#    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
+#    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
+#    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh,${INIT_ACTIONS_ROOT}/rapids/rapids.sh" \
+#    --metadata dask-runtime="yarn" \
+#    --metadata dask-runtime="standalone" \
+#    --image-version "${IMAGE_VERSION}" \
+#    --no-shielded-secure-boot \
+#    --image "projects/${PROJECT_ID}/global/images/custom-2-2-debian12-2024-10-04" \
+#    --initialization-actions "${INIT_ACTIONS_ROOT}/sf-env-setup.sh" \
 #    --num-masters=1 \
 #    --num-workers=2 \
 #    --metadata cuda-version="${CUDA_VERSION}" \
@@ -99,18 +119,18 @@ function create_standard_cluster() {
 #    --num-masters=1 \
 #    --num-workers=2 \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
-#    --image "projects/cjac-2021-00/global/images/custom-2-2-debian12-2024-07-27" \
-#    --image "projects/cjac-2021-00/global/images/custom-2-2-ubuntu22-2024-07-27" \
-#    --image "projects/cjac-2021-00/global/images/custom-2-2-rocky9-2024-07-27" \
+#    --image "projects/${PROJECT_ID}/global/images/custom-2-2-debian12-2024-07-27" \
+#    --image "projects/${PROJECT_ID}/global/images/custom-2-2-ubuntu22-2024-07-27" \
+#    --image "projects/${PROJECT_ID}/global/images/custom-2-2-rocky9-2024-07-27" \
 
 
 #    --metadata dask-runtime="standalone" \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/bigtable/bigtable.sh" \
 #    --worker-accelerator "type=${ACCELERATOR_TYPE}" \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
-#    --image "projects/cjac-2021-00/global/images/nvidia-open-kernel-bookworm-2024-06-26" \
+#    --image "projects/${PROJECT_ID}/global/images/nvidia-open-kernel-bookworm-2024-06-26" \
 #    --image-version "${IMAGE_VERSION}" \
-#    --image "projects/cjac-2021-00/global/images/nvidia-open-kernel-bookworm-2024-06-21-a" \
+#    --image "projects/${PROJECT_ID}/global/images/nvidia-open-kernel-bookworm-2024-06-21-a" \
 #    --no-shielded-secure-boot \
 #    --image-version "${IMAGE_VERSION}" \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
@@ -213,12 +233,12 @@ function create_standard_cluster() {
 #    --initialization-actions ${INIT_ACTIONS_ROOT}/oozie/oozie.sh \
 
 # [serial] new initialization action to execute in serial #1086
-# https://github.com/GoogleCloudDataproc/initialization-actions/pull/1086   
+# https://github.com/GoogleCloudDataproc/initialization-actions/pull/1086
 #    --initialization-actions ${INIT_ACTIONS_ROOT}/serial/serial.sh \
 #    --metadata "initialization-action-paths=${INIT_ACTION_PATHS}" \
 #    --metadata "initialization-action-paths-separator=${PATH_SEPARATOR}" \
 
-  
+
     # --worker-boot-disk-type pd-ssd \
     # --worker-boot-disk-size 50 \
     # --worker-machine-type ${MACHINE_TYPE} \
@@ -247,7 +267,7 @@ function create_standard_cluster() {
     # --metadata init-actions-repo=${INIT_ACTIONS_ROOT} \
     # --metadata install-gpu-agent=true \
     # --metadata cuda-version=${CUDA_VERSION} \
-  
+
 #,${INIT_ACTIONS_ROOT}/nvidia_docker.sh \
   #    --max-idle=${IDLE_TIMEOUT} \
 #    --initialization-action-timeout=15m \
@@ -258,10 +278,10 @@ function create_standard_cluster() {
 
 #    --image-version 1.4.80-ubuntu18 \
 
-  
+
 # Increase log verbosity
 #   --verbosity=debug \
-  
+
 #
 # Kafka
 #
@@ -269,7 +289,7 @@ function create_standard_cluster() {
 #    --optional-components ZOOKEEPER \
 #    --metadata "run-on-master=true" \
 #    --initialization-actions gs://goog-dataproc-initialization-actions-${REGION}/kafka/kafka.sh \
-  
+
 #
 # Hive
 #
@@ -279,7 +299,7 @@ function create_standard_cluster() {
 #    --properties "hive:hive.metastore.warehouse.dir=gs://${HIVE_DATA_BUCKET}/hive-warehouse" \
 #    --metadata "hive-metastore-instance=${PROJECT_ID}:${REGION}:${HIVE_INSTANCE_NAME}" \
 #    --metadata "db-hive-password-uri=gs://${BUCKET}/dataproc-initialization-actions/mysql_hive_password.encrypted" \
-#    --metadata "kms-key-uri=projects/cjac-2021-00/locations/global/keyRings/keyring-cluster-1668020639/cryptoKeys/kdc-root-cluster-1668020639" \
+#    --metadata "kms-key-uri=projects/${PROJECT_ID}/locations/global/keyRings/keyring-cluster-1668020639/cryptoKeys/kdc-root-cluster-1668020639" \
 
 
 
@@ -301,13 +321,13 @@ function create_standard_cluster() {
 #    --num-workers=2 \
 #    --autoscaling-policy=${AUTOSCALING_POLICY_NAME} \
 #    --scopes 'https://www.googleapis.com/auth/cloud-platform'
-  
+
 #
 #  Cluster options
 #    --optional-components FLINK \
 #    --num-worker-local-ssds 4 \
 #     --initialization-actions ${INIT_ACTIONS_ROOT}/fail.sh \
-#    --optional-components FLINK \    
+#    --optional-components FLINK \
 
 #    --optional-components JUPYTER,ZOOKEEPER \
 #    --properties="^~~^$(perl -n -e '@l=<STDIN>; chomp @l; print join q{~~}, @l' <init/${CASE_NUMBER}/dataproc.properties)"
@@ -415,7 +435,7 @@ function create_standard_cluster() {
 
 # Flink
 #    --optional-components FLINK \
-    
+
 #
 # Rapids
 #
@@ -428,12 +448,12 @@ function create_standard_cluster() {
 #
 # --properties-file=${INIT_ACTIONS_ROOT}/dataproc.properties
 
-function delete_standard_cluster() {
+function delete_dpgce_cluster() {
   set -x
-  if exists_standard_cluster == 0; then
-    echo "standard cluster exists"
+  if exists_dpgce_cluster == 0; then
+    echo "dpgce cluster exists"
   else
-    echo "standard cluster does not exist.  Not deleting"
+    echo "dpgce cluster does not exist.  Not deleting"
     set +x
     return 0
   fi
@@ -485,30 +505,40 @@ function create_project(){
     if [[ -z "${PRJBA}" ]]; then
       set +x
       echo "
+The following variable values were read from env.json
+PROJECT_ID=${PROJECT_ID}
+BILLING_ACCOUNT=${BILLING_ACCOUNT}
+PRIV_DOMAIN=${PRIV_DOMAIN}
+DOMAIN=${DOMAIN}
+USER=${USER}
 
-          In order to connect a billing account with your new project, you will
-          need to temporariliy grant your ${USER}@google.com account the
-          roles/billing.admin role for the premium-cloud-support.com org.  After
-          reviewing the documentation[1], visit the PCS Command center[2] and
-          enter your justification type, justification ID and your @google.com
-          email.  Select 'Other (Fill in Other Role field)' for 'Role', and
-          enter 'roles/billing.admin' into the 'Other Role' field.  See the
-          screenshot[3] for an example.
+https://cloud.google.com/billing/docs/how-to/billing-access
 
-          Once this has been completed, prepare to log in with your @google.com
-          account, and then press enter.
+Please be prepared to link the project ${PROJECT_ID} to the billing
+account ${BILLING_ACCOUNT}.  The principal indicated by
+${PRIV_USER}@${PRIV_DOMAIN} must have roles/billing.admin as
+documented in above link.
 
-          [1] https://g3doc.corp.google.com/company/gfw/support/cloud/processes/new-hires/gcp-resources/premium-support-acc.md#granting-iam-roles-on-organization-iam-policy-only-when-needed
-          [2] https://support-gcp-admin.googleplex.com/grantiam
-          [3] https://screenshot.googleplex.com/9xUWEefmSVN2GZC
+Please encode the principal with rights to modify billing details as
+PRIV_USER and PRIV_DOMAIN in your env.json file.
 
+If you have not yet done this, please cancel this operation (^C),
+modify your env.json file to include the privileged principal user and
+domain, and then re-run this command.
+
+gcloud beta billing projects \
+  link ${PROJECT_ID} --billing-account ${BILLING_ACCOUNT}
+
+once you have credentials to run the above command,
+
+Press enter > 
 "
       read
 
       local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-      while [[ $active_account != "${USER}@google.com" ]]; do
-        echo "AUTHENTICATE AS YOUR @google.com EMAIL ADDRESS"
-        gcloud auth login ${USER}@google.com
+      while [[ $active_account != "${USER}@${PRIV_DOMAIN}" ]]; do
+        echo "AUTHENTICATE AS A USER WITH PRIVILEGES TO LINK THESE PROJECTS"
+        gcloud auth login ${USER}@${PRIV_DOMAIN}
         local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
       done
 
@@ -520,13 +550,13 @@ function create_project(){
         exit -1
       fi
 
-      echo "Prepare to log in with your @premium-cloud-support.com account and then press enter..."
+      echo "Prepare to log in with your @${DOMAIN} account and then press enter..."
       read
 
       local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-      while [[ $active_account != "${USER}@premium-cloud-support.com" ]]; do
-        echo "AUTHENTICATE AS YOUR @premium-cloud-support.com EMAIL ADDRESS"
-        gcloud auth login ${USER}@premium-cloud-support.com
+      while [[ $active_account != "${USER}@${DOMAIN}" ]]; do
+        echo "AUTHENTICATE AS YOUR @${DOMAIN} EMAIL ADDRESS"
+        gcloud auth login ${USER}@${DOMAIN}
         local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
       done
     fi
@@ -538,16 +568,16 @@ function create_project(){
 function delete_project() {
   set -x
   local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-  while [[ $active_account != "${USER}@google.com" ]]; do
-    echo "AUTHENTICATE AS YOUR @google.com EMAIL ADDRESS"
-    gcloud auth login ${USER}@google.com
+  while [[ $active_account != "${USER}@${PRIV_DOMAIN}" ]]; do
+    echo "AUTHENTICATE AS YOUR @${PRIV_DOMAIN} EMAIL ADDRESS"
+    gcloud auth login ${USER}@${PRIV_DOMAIN}
     local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
   done
   gcloud beta billing projects unlink ${PROJECT_ID}
   local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
-  while [[ $active_account != "${USER}@premium-cloud-support.com" ]]; do
-    echo "AUTHENTICATE AS YOUR @premium-cloud-support.com EMAIL ADDRESS"
-    gcloud auth login ${USER}@premium-cloud-support.com
+  while [[ $active_account != "${USER}@${DOMAIN}" ]]; do
+    echo "AUTHENTICATE AS YOUR @${DOMAIN} EMAIL ADDRESS"
+    gcloud auth login ${USER}@${DOMAIN}
     local active_account=$(gcloud auth list 2>/dev/null | awk '/^\*/ {print $2}')
   done
   gcloud projects delete --quiet ${PROJECT_ID}
@@ -587,8 +617,8 @@ function create_mysql_admin_password() {
     dd if=/dev/urandom bs=8 count=4 | xxd -p | \
       gcloud kms encrypt \
       --location=global \
-      --keyring=projects/cjac-2021-00/locations/global/keyRings/keyring-cluster-1668020639 \
-      --key=projects/cjac-2021-00/locations/global/keyRings/keyring-cluster-1668020639/cryptoKeys/kdc-root-cluster-1668020639 \
+      --keyring=projects/${PROJECT_ID}/locations/global/keyRings/${KMS_KEYRING} \
+      --key=projects/${PROJECT_ID}/locations/global/keyRings/${KMS_KEYRING}/cryptoKeys/${KDC_ROOT_PASSWD_KEY} \
       --plaintext-file=- \
       --ciphertext-file=init/mysql_admin_password.encrypted
 }
@@ -758,7 +788,11 @@ function delete_phs_cluster() {
 
 function create_service_account() {
   set -x
-  gcloud iam service-accounts create ${SA_NAME} \
+  if gcloud iam service-accounts describe "${GSA}" > /dev/null ; then
+    echo "service account ${SA_NAME} already exists"
+    return 0 ; fi
+
+  gcloud iam service-accounts create "${SA_NAME}" \
     --description="Service account for use with cluster ${CLUSTER_NAME}" \
     --display-name="${SA_NAME}"
 
@@ -806,11 +840,27 @@ function delete_service_account() {
     --role=roles/storage.objectViewer \
     --member="serviceAccount:${GSA}" \
     "${PROJECT_ID}"
-  
-  gcloud iam service-accounts delete --quiet ${GSA}
+
+  gcloud iam service-accounts delete --quiet "${GSA}"
 
   set +x
   echo "service account deleted"
+}
+
+function create_artifacts_repository(){
+  set -x
+  gcloud artifacts repositories create "${ARTIFACT_REPOSITORY}" \
+    --repository-format=docker \
+    --location="${REGION}"
+  set +x
+}
+
+function push_container_image() {
+  gcloud auth print-access-token \
+    --impersonate-service-account "${GSA}" \
+      | docker login \
+	  -u oauth2accesstoken \
+          --password-stdin "https://${REGION}-docker.pgk.dev"
 }
 
 function grant_gke_roles(){
@@ -819,20 +869,57 @@ function grant_gke_roles(){
     gcloud iam service-accounts add-iam-policy-binding \
       --role=roles/iam.workloadIdentityUser \
       --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${DPGKE_NAMESPACE}/${svc}]" \
-      "${GSA}"
+      "${GSA}" > /dev/null
   done
+  echo gcloud artifacts repositories add-iam-policy-binding "${ARTIFACT_REPOSITORY}" \
+      --location="${REGION}" \
+      --member="serviceAccount:${GSA}" \
+      --role=roles/artifactregistry.writer > /dev/null
   set +x
   echo "dpgke service account roles granted"
 }
 
 function create_gke_cluster() {
   set -x
-  gcloud container clusters create ${GKE_CLUSTER_NAME} \
-    --service-account=${GSA} \
-    --workload-pool=${PROJECT_ID}.svc.id.goog \
-    --tags ${TAGS} \
-    --subnetwork ${SUBNET} \
-    --network ${NETWORK}
+
+  if gcloud container clusters describe "${GKE_CLUSTER_NAME}" > /dev/null ; then
+    echo "GKE cluster ${GKE_CLUSTER_NAME} already exists"
+  else
+    gcloud container clusters create "${GKE_CLUSTER_NAME}" \
+      --service-account="${GSA}" \
+      --workload-pool="${PROJECT_ID}.svc.id.goog" \
+      --tags ${TAGS} \
+      --subnetwork ${SUBNET} \
+      --network ${NETWORK}
+  fi
+
+  # # Create node pool for control
+  # echo gcloud container node-pools describe "${DP_CTRL_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_CTRL_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_CTRL_POOLNAME}" \
+  #   --machine-type="e2-standard-4" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
+
+  # # Create node pool for drivers
+  # echo gcloud container node-pools describe "${DP_DRIVER_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_DRIVER_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_DRIVER_POOLNAME}" \
+  #   --machine-type="n2-standard-4" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
+
+  # # Create node pool for executors
+  # echo gcloud container node-pools describe "${DP_EXEC_POOLNAME}" \
+  #   --zone "${ZONE}" --cluster "${GKE_CLUSTER_NAME}" > /dev/null \
+  #   && echo "nodepool ${DP_EXEC_POOLNAME} for cluster ${GKE_CLUSTER_NAME} already exists" \
+  # || gcloud container node-pools create "${DP_EXEC_POOLNAME}" \
+  #   --machine-type="n2-standard-8" \
+  #   --zone "${ZONE}" \
+  #   --cluster "${GKE_CLUSTER_NAME}"
+
 
   set +x
   echo "gke cluster created"
@@ -841,21 +928,46 @@ function create_gke_cluster() {
 function delete_gke_cluster() {
   set -x
 
-  gcloud container clusters delete --quiet ${GKE_CLUSTER_NAME} --zone ${ZONE}
+  for pn in "${DP_CTRL_POOLNAME}" "${DP_DRIVER_POOLNAME}" "${DP_EXEC_POOLNAME}" ; do
+    gcloud container node-pools delete --quiet ${pn} \
+      --zone ${ZONE} \
+      --cluster ${GKE_CLUSTER_NAME}
+  done
 
-  gcloud container node-pools delete --quiet ${DP_POOLNAME_DEFAULT} \
-    --zone ${ZONE} \
-    --cluster ${GKE_CLUSTER_NAME}
+  gcloud container clusters delete --quiet ${GKE_CLUSTER_NAME} --zone ${ZONE}
 
   set +x
   echo "gke cluster deleted"
+}
+
+# https://cloud.google.com/dataproc/docs/guides/dpgke/dataproc-gke-nodepools#node_pool_settings
+function create_dpgke_cluster() {
+  set -x
+  gcloud dataproc clusters gke create "${DPGKE_CLUSTER_NAME}" \
+    --region=${REGION} \
+    --gke-cluster=${GKE_CLUSTER} \
+    --spark-engine-version=latest \
+    --staging-bucket=${BUCKET} \
+    --setup-workload-identity \
+    --properties="spark:spark.kubernetes.container.image=${REGION}-docker.pkg.dev/${PROJECT_ID}/dockerfile-dataproc/dockerfile:latest" \
+    --pools="name=${DP_CTRL_POOLNAME},roles=default,machineType=e2-standard-4" \
+    --pools="name=${DP_DRIVER_POOLNAME},min=1,max=3,roles=spark-driver,machineType=n2-standard-4" \
+    --pools="name=${DP_EXEC_POOLNAME},min=1,max=10,roles=spark-executor,machineType=n2-standard-8"
+  set +x
+  echo "dpgke cluster created"
+}
+
+function delete_dpgke_cluster() {
+  set -x
+  echo no such implementation
+  set +x
 }
 
 source lib/database-functions.sh
 source lib/net-functions.sh
 
 function create_bucket () {
-  if gsutil ls -d gs://${BUCKET} ; then
+  if gsutil ls -b "gs://${BUCKET}" ; then
     echo "bucket already exists, skipping creation."
     return
   fi
@@ -906,7 +1018,7 @@ function create_autoscaling_policy() {
 function delete_autoscaling_policy() {
   set -x
 
-  if gcloud dataproc autoscaling-policies describe ${AUTOSCALING_POLICY_NAME} --region ${REGION} > /dev/null; then  
+  if gcloud dataproc autoscaling-policies describe ${AUTOSCALING_POLICY_NAME} --region ${REGION} > /dev/null; then
     gcloud dataproc autoscaling-policies delete --quiet ${AUTOSCALING_POLICY_NAME} --region ${REGION}
   else
     echo "policy ${AUTOSCALING_POLICY_NAME} does not exists"
@@ -935,7 +1047,7 @@ function reproduce {
   # https://linux.die.net/man/1/stress
 
   # consider dd if=/dev/zero | launch_job -
-  
+
   set +x
 }
 
@@ -1016,7 +1128,7 @@ function create_bigtable_instance() {
     set +x
     return 0
   fi
-  
+
   gcloud bigtable instances create ${BIGTABLE_INSTANCE} \
     --display-name ${BIGTABLE_DISPLAY_NAME} \
     --cluster-config="${BIGTABLE_CLUSTER_CONFIG}"
@@ -1049,7 +1161,7 @@ function get_clusters_list() {
   if [[ -z ${CLUSTERS_LIST} ]]; then
     CLUSTERS_LIST="$(gcloud dataproc clusters list --region ${REGION} --format json)"
   fi
-  
+
   echo "${CLUSTERS_LIST}"
 }
 

@@ -17,6 +17,9 @@
 export PATH_SEPARATOR=";"
 export FOLDER_NUMBER="$(jq -r .FOLDER_NUMBER env.json)"
 export DOMAIN="$(jq -r .DOMAIN env.json)"
+export USER="$(jq -r .USER env.json)"
+export PRIV_DOMAIN="$(jq -r .PRIV_DOMAIN env.json)"
+export PRIV_USER="$(jq -r .PRIV_USER env.json)"
 export PROJECT_ID="$(jq -r .PROJECT_ID env.json)"
 if [[ "${PROJECT_ID}" == "ldap-example-yyyy-nn" ]]; then
   export PROJECT_ID="${USER}-example-$(date +%Y-%U)"
@@ -30,16 +33,18 @@ export ASN_NUMBER="$(jq -r .ASN_NUMBER env.json)"
 export IMAGE_VERSION="$(jq -r .IMAGE_VERSION env.json)"
 export REGION="$(jq -r .REGION env.json)"
 
-export ZONE="${REGION}-f"
+export ZONE="${REGION}-a"
 #export IMAGE_VERSION="2.0"
 #export IMAGE_VERSION="2.0-ubuntu18"
-#export IMAGE_VERSION="2.0-rocky8"
+export IMAGE_VERSION="2.0-rocky8"
 #export IMAGE_VERSION="2.0-debian10"
 #export IMAGE_VERSION="2.1"
 #export IMAGE_VERSION="2.1-ubuntu20"
 #export IMAGE_VERSION="2.1-rocky8"
 #export IMAGE_VERSION="2.1-debian11"
-export IMAGE_VERSION="2.2"
+#export IMAGE_VERSION="2.1.66-debian11"
+#export IMAGE_VERSION="2.2"
+#export IMAGE_VERSION="2.2.35-debian12"
 #export IMAGE_VERSION="2.2-ubuntu22"
 #export IMAGE_VERSION="2.2-rocky9"
 #export IMAGE_VERSION="2.2-debian12"
@@ -67,6 +72,9 @@ export FIREWALL="fw-${CLUSTER_NAME}"
 export TAGS="tag-${CLUSTER_NAME}"
 export ROUTER_NAME="router-${CLUSTER_NAME}"
 export PRINCIPAL="${USER}@${DOMAIN}"
+
+# Artifact Registry
+export ARTIFACT_REPOSITORY="${PROJECT_ID}-dataproc-repro"
 
 # BigTable
 export BIGTABLE_INSTANCE="$(jq -r .BIGTABLE_INSTANCE env.json)"
@@ -148,10 +156,14 @@ export CUDA_VERSION=12.4
 # DPGKE
 export DPGKE_NAMESPACE=k8sns-${CLUSTER_NAME}
 export GKE_CLUSTER_NAME="gke-${CLUSTER_NAME}"
+export DPGKE_CLUSTER_NAME="dpgke-${CLUSTER_NAME}"
 export GKE_CLUSTER="projects/${PROJECT_ID}/locations/${ZONE}/clusters/${GKE_CLUSTER_NAME}"
 export DP_POOLNAME_DEFAULT=default-pool-${CLUSTER_NAME}
 export DP_POOLNAME_WORKER=worker-pool-${CLUSTER_NAME}
 
+export DP_CTRL_POOLNAME="ctrl-${CLUSTER_NAME}"
+export DP_DRIVER_POOLNAME="driver-${CLUSTER_NAME}"
+export DP_EXEC_POOLNAME="exec-${CLUSTER_NAME}"
 
 # Kerberos
 export KMS_KEYRING="keyring-${CLUSTER_NAME}"
@@ -212,5 +224,35 @@ fi
 # #gcloud config set compute/zone ${ZONE}
 # #gcloud config set project ${PROJECT_ID}
 # gcloud config set project ${PROJECT_ID}
+
+
+#
+# MOK config for secure boot
+#
+modulus_md5sum=cd2bd1bdd9f9e4c43c12aecf6c338d6f
+private_secret_name=efi-db-priv-key-042
+public_secret_name=efi-db-pub-key-042
+secret_project=${PROJECT_ID}
+secret_version=1
+
+# The above are used by gpu/instal_gpu_driver.sh to suppy driver
+# signing material to DKMS These configuration options can be
+# generated for the reader if the following lines are uncommented.
+
+#enable_secret_manager
+#eval $(bash ../custom-images/examples/secure-boot/create-key-pair.sh)
+
+
+# To boot a secure-boot capable cluster from a pre-init image, the
+# reader will have already performed the steps from
+# ../custom-images/examples/secure-boot/README.md including creation of creating
+# an env.json in the current directory.
+
+# The reader will then need to pass the
+# `--image="projects/${PROJECT_ID}/global/images/"${PURPOSE}-${dataproc_version/\./-}-${timestamp}"`
+# argument instead of `--image-version "${IMAGE_VERSION}"` when
+# performing the gcloud dataproc clusters create command.  Modify the
+# call to gcloud in shared-functions.sh's create_dpgce_cluster
+# function.
 
 echo "done"

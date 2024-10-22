@@ -15,25 +15,35 @@
 # limitations under the License.
 #
 
+#set -e
+
 source env.sh
 
-# Copy latest initialization action scripts
-echo -n "copying actions to gcs bucket..."
-gsutil -m cp \
-       -L action-update.log \
-       -r init/* gs://${BUCKET}/dataproc-initialization-actions
-if [[ $? == 0 ]]; then
-  echo "done"
-else
-  echo "fail"
-  exit 1
-fi
+delete_dpgce_cluster
 
-# re-create normal dataproc cluster
-delete_standard_cluster
-create_standard_cluster
+delete_service_account
 
-echo "=================================="
-echo "General Purpose Cluster re-created"
-echo "=================================="
+delete_autoscaling_policy
 
+#delete_phs_cluster()
+
+#delete_mysql_instance
+#delete_legacy_mssql_instance
+
+delete_router
+
+delete_firewall_rules
+
+#delete_logging_firewall_rules
+
+#delete_ip_allocation
+
+delete_subnet
+
+delete_vpc_network
+
+#delete_vpc_peering
+
+delete_bucket
+
+set +x

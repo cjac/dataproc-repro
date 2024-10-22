@@ -59,14 +59,18 @@ function create_firewall_rules () {
 # Create egress firewall rules
 
   set -x
-  gcloud compute firewall-rules create ${FIREWALL}-out \
+  gcloud compute firewall-rules describe ${FIREWALL}-out > /dev/null \
+  && echo "firewall rule ${FIREWALL}-out already exists" \
+  || gcloud compute firewall-rules create ${FIREWALL}-out \
     --direction egress \
     --network ${NETWORK_URI} \
     --target-tags=${TAGS} \
     --action allow \
     --rules all
 
-  gcloud compute firewall-rules create ${FIREWALL}-default-allow-internal-out \
+  gcloud compute firewall-rules describe ${FIREWALL}-default-allow-internal-out > /dev/null \
+  && echo "firewall rule ${FIREWALL}-default-allow-internal-out already exists" \
+  || gcloud compute firewall-rules create ${FIREWALL}-default-allow-internal-out > /dev/null \
     --direction egress \
     --network ${NETWORK_URI} \
     --source-ranges 10.0.0.0/8 \
@@ -81,14 +85,18 @@ function create_firewall_rules () {
 # Create ingress firewall rules
 
   set -x
-  gcloud compute firewall-rules create ${FIREWALL}-in \
+  gcloud compute firewall-rules describe ${FIREWALL}-in > /dev/null \
+  && echo "firewall rule ${FIREWALL}-in already exists" \
+  || gcloud compute firewall-rules create ${FIREWALL}-in \
     --direction ingress \
     --network ${NETWORK_URI} \
     --source-tags=${TAGS} \
     --action allow \
     --rules all
 
-  gcloud compute firewall-rules create ${FIREWALL}-default-allow-internal-in \
+  gcloud compute firewall-rules describe ${FIREWALL}-default-allow-internal-in > /dev/null \
+  && echo "firewall rule ${FIREWALL}-default-allow-internal-in already exists" \
+  || gcloud compute firewall-rules create ${FIREWALL}-default-allow-internal-in \
     --direction ingress \
     --network ${NETWORK_URI} \
     --source-ranges 10.0.0.0/8 \
@@ -115,7 +123,9 @@ function delete_firewall_rules () {
 
 function create_subnet () {
   set -x
-  gcloud compute networks subnets create ${SUBNET} \
+  gcloud compute networks subnets describe "${SUBNET}" > /dev/null \
+  && echo "subnet ${SUBNET} already exists" \
+  || gcloud compute networks subnets create ${SUBNET} \
     --network=${NETWORK} \
     --range="$RANGE" \
     --enable-private-ip-google-access \
@@ -138,7 +148,9 @@ function delete_subnet () {
 
 function add_nat_policy () {
   set -x
-  gcloud compute routers nats create nat-config \
+  gcloud compute routers nats describe nat-config --router="${ROUTER_NAME}" > /dev/null \
+  && echo "nat-config exists for router ${ROUTER_NAME}" \
+  || gcloud compute routers nats create nat-config \
     --router-region ${REGION} \
     --router ${ROUTER_NAME} \
     --nat-all-subnet-ip-ranges \
@@ -153,7 +165,9 @@ function add_nat_policy () {
 function create_router () {
   set -x
 
-  gcloud compute routers create ${ROUTER_NAME} \
+  gcloud compute routers describe "${ROUTER_NAME}" > /dev/null \
+  && echo "router ${ROUTER_NAME} already exists" \
+  || gcloud compute routers create ${ROUTER_NAME} \
     --project=${PROJECT_ID} \
     --network=${NETWORK} \
     --asn=${ASN_NUMBER} \
@@ -225,8 +239,10 @@ function create_vpc_network () {
   # Create VPC network
 
   set -x
-  
-  gcloud compute networks create ${NETWORK} \
+
+  gcloud compute networks describe "${NETWORK}" > /dev/null \
+  && echo "network ${NETWORK} already exists" \
+  || gcloud compute networks create "${NETWORK}" \
     --description="network for use with Dataproc cluster ${CLUSTER_NAME}"
   set +x
 
