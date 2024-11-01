@@ -6,39 +6,11 @@ set -e
 
 . env.sh
 
-# https://github.com/glevand/secure-boot-utils
-
-# https://cloud.google.com/compute/shielded-vm/docs/creating-shielded-images#adding-shielded-image
-
-# https://cloud.google.com/compute/shielded-vm/docs/creating-shielded-images#generating-security-keys-certificates
-
-# https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot#Creating_keys
-
-eval "$(bash create-key-pair.sh)"
-
-ITERATION=047
-export REGION="$(jq -r .REGION env.json)"
-export ZONE="${REGION}-a"
-
-# gcloud compute images list --format json | jq > image-list-$(date +%F).json
-# https://www.googleapis.com/compute/v1/projects/debian-cloud/global/images/debian-11-bullseye-v20240110
-
-#SOURCE_IMAGE="debian-12-bookworm-v20240110"
-#SOURCE_IMAGE="debian-12-bookworm-v20240515"
-SOURCE_IMAGE="debian-12-bookworm-v20240910"
-# Dataproc images can be found with:
-
-# find image by: gcloud compute images list --project cloud-dataproc | grep dataproc-2-2-deb12
-
-# gcloud compute images create gpu-2-2-debian12-2024-10-05-03-40-install --project=${PROJECT_ID} --source-disk-zone=us-west4-a --source-disk=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --signature-database-file=tls/db.der,tls/MicCorUEFCA2011_2011-06-27.crt --guest-os-features=UEFI_COMPATIBLE --family=dataproc-custom-image
-# + gcloud compute disks create gpu-2-2-debian12-2024-10-05-03-40-install --project=${PROJECT_ID} --zone=us-west4-a --image=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --type=pd-ssd --size=50GB
-
-
 # Use the base image created for use with rapids
 IMAGE_WITH_CERTS="rapids-pre-init-2-2-debian12-2024-10-31-07-41"
 DATAPROC_IMAGE_VERSION="2.2"
 
-eval "bash create-key-pair.sh"
+eval "$(bash create-key-pair.sh)"
 metadata="public_secret_name=${public_secret_name},private_secret_name=${private_secret_name},secret_project=${secret_project},secret_version=${secret_version}"
 
 if ( gcloud compute images describe ${IMAGE_WITH_CERTS} > /dev/null 2>&1 ) ; then
@@ -82,10 +54,10 @@ function compare_versions_lt() {
 MACHINE_TYPE=n1-standard-8
 INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
 if ( gcloud compute instances describe "${INSTANCE_NAME}" > /dev/null 2>&1 ) ; then
-    echo "instance ${INSTANCE_NAME} already online.  Deleting"
-#    gcloud compute instances delete -q "${INSTANCE_NAME}" --zone ${ZONE}
+    echo "instance ${INSTANCE_NAME} already online."
+    # TODO: Start if it is in stopped state
 else
-echo "it's not online."
+echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
   secure_boot_arg="--shielded-secure-boot"
   # Dataproc images prior to 2.2 do not recognize the trust database
   if (compare_versions_lt "${DATAPROC_IMAGE_VERSION}" "2.2") ; then
@@ -113,7 +85,6 @@ gcloud compute scp \
        "${INSTANCE_NAME}:/tmp/" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
-
 
 DEBIAN_SOURCES="/etc/apt/sources.list.d/debian.sources"
 COMPONENTS="main contrib non-free non-free-firmware"
