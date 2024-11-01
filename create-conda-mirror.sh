@@ -33,13 +33,16 @@ their entirety! Due to this, active mirrors can take a long time to
 complete.
 
 EOF
-  replica_zones="$(gcloud compute zones list | perl -e '@l=map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
+  gcloud compute disks delete "${CONDA_MIRROR_DISK_NAME}" \
+      --project="${PROJECT_ID}" \
+      --region="${REGION}"
+  replica_zones="$(gcloud compute zones list | perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
   gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}" \
       --project="${PROJECT_ID}" \
       --region="${REGION}" \
       --type="pd-balanced" \
       --replica-zones="${replica_zones}" \
-      --size="300GB"
+      --size="15TB"
 fi
 
 # boot a VM with this image
