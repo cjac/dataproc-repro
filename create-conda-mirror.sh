@@ -63,7 +63,7 @@ else
     --service-account="${GSA}" \
     --machine-type="${CONDA_MM_TYPE}" \
     "${secure_boot_arg}" \
-    --accelerator="type=nvidia-tesla-t4,count=4" \
+    --accelerator="type=nvidia-tesla-t4" \
     --maintenance-policy TERMINATE \
     --zone="${ZONE}" \
     --network-interface="subnet=${SUBNET},address=" \

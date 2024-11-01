@@ -5,6 +5,11 @@
 #
 # Copyright 2024, Collier Technologies LLC and contributors
 #
+# A one-month duration, non-transferrable licenses to use, but not
+# redistribute is automatically granted to sponsors of $50 or more
+#
+# https://github.com/sponsors/LLC-Technologies-Collier
+#
 
 #
 # This script is copied to the conda mirror synchronization host.  The
@@ -73,27 +78,27 @@ if [[ -e "${mirror_block}" ]] ; then
       'conda-forge'
       'rapidsai'
       'nvidia'
-      'pkgs/main'
-      'pkgs/r'
   )
 
   mirror_screenrc=/tmp/conda-mirror.screenrc
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1 ; num_channels=${#CHANNEL_CMD[@]}
   for channel in 'conda-forge' 'rapidsai' 'nvidia' 'pkgs/main' 'pkgs/r' ; do
+    #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
+    num_threads=12
     cmd=$(echo "${CONDA_MIRROR}" -vvv \
       --upstream-channel="${channel}" \
       --platform=linux-64            \
       --temp-directory="${tmp_dir}"  \
       --target-directory="${mirror_mountpoint}/${channel}" \
-      --num-threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)" )
+      --num-threads="${num_threads}")
     echo "screen -L -t ${channel} ${i} $cmd" >> "${mirror_screenrc}"
     i="$(expr $i + 1)"
   done
   screen -US "conda-mirror" -c "${mirror_screenrc}"
 
-  systemctl stop apache2
-  umount "${mirror_mountpoint}"
+  echo systemctl stop apache2
+  echo umount "${mirror_mountpoint}"
 
   # detach the rw disk
   echo gcloud compute instances detach-disk "$(hostname -s)" \
