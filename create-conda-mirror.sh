@@ -57,7 +57,7 @@ if ( gcloud compute instances describe "${INSTANCE_NAME}" > /dev/null 2>&1 ) ; t
     echo "instance ${INSTANCE_NAME} already online."
     # TODO: Start if it is in stopped state
 else
-echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
+  echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
   secure_boot_arg="--shielded-secure-boot"
   # Dataproc images prior to 2.2 do not recognize the trust database
   if (compare_versions_lt "${DATAPROC_IMAGE_VERSION}" "2.2") ; then
@@ -79,6 +79,7 @@ echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
   sleep 30
 fi
 
+# copy script for installing conda-mirror
 gcloud compute scp \
        "lib/conda-mirror/sync-mirror.sh" \
        --zone "${ZONE}" \
@@ -86,8 +87,6 @@ gcloud compute scp \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
 
-DEBIAN_SOURCES="/etc/apt/sources.list.d/debian.sources"
-COMPONENTS="main contrib non-free non-free-firmware"
 gcloud compute ssh \
        --zone "${ZONE}" \
        "${INSTANCE_NAME}" \

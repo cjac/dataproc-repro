@@ -34,7 +34,7 @@ CONDA_MIRROR="${CONDA}-mirror"
 
 apt-get install screen
 
-screen conda-mirror \
+screen "${CONDA_MIRROR}" \
     --upstream-channel=conda-forge \
     --upstream-channel=rapidsai    \
     --upstream-channel=nvidia      \
