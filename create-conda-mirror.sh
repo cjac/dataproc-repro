@@ -16,7 +16,8 @@ metadata="public_secret_name=${public_secret_name},private_secret_name=${private
 if ( gcloud compute images describe ${IMAGE_WITH_CERTS} > /dev/null 2>&1 ) ; then
     echo "image ${IMAGE_WITH_CERTS} already exists"
 else
-    echo "image generation not supported"
+    echo "image generation not supported in free version.
+          Please purchase subscription from Collier Technologies LLC."
 fi
 
 CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
