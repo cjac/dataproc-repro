@@ -30,58 +30,21 @@ SOURCE_IMAGE="debian-12-bookworm-v20240910"
 
 # find image by: gcloud compute images list --project cloud-dataproc | grep dataproc-2-2-deb12
 
-# gcloud compute images create gpu-2-2-debian12-2024-10-05-03-40-install --project=cjac-2021-00 --source-disk-zone=us-west4-a --source-disk=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --signature-database-file=tls/db.der,tls/MicCorUEFCA2011_2011-06-27.crt --guest-os-features=UEFI_COMPATIBLE --family=dataproc-custom-image
-# + gcloud compute disks create gpu-2-2-debian12-2024-10-05-03-40-install --project=cjac-2021-00 --zone=us-west4-a --image=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --type=pd-ssd --size=50GB
+# gcloud compute images create gpu-2-2-debian12-2024-10-05-03-40-install --project=${PROJECT_ID} --source-disk-zone=us-west4-a --source-disk=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --signature-database-file=tls/db.der,tls/MicCorUEFCA2011_2011-06-27.crt --guest-os-features=UEFI_COMPATIBLE --family=dataproc-custom-image
+# + gcloud compute disks create gpu-2-2-debian12-2024-10-05-03-40-install --project=${PROJECT_ID} --zone=us-west4-a --image=projects/cloud-dataproc/global/images/dataproc-2-2-deb12-20240903-031150-rc01 --type=pd-ssd --size=50GB
 
 
 # Use the base image created for use with rapids
 IMAGE_WITH_CERTS="rapids-pre-init-2-2-debian12-2024-10-31-07-41"
 DATAPROC_IMAGE_VERSION="2.2"
 
+eval "bash create-key-pair.sh"
+metadata="public_secret_name=${public_secret_name},private_secret_name=${private_secret_name},secret_project=${secret_project},secret_version=${secret_version}"
+
 if ( gcloud compute images describe ${IMAGE_WITH_CERTS} > /dev/null 2>&1 ) ; then
     echo "image ${IMAGE_WITH_CERTS} already exists"
 else
-    curl 'https://raw.githubusercontent.com/LLC-Technologies-Collier/custom-images/refs/heads/main/examples/secure-boot/create-key-pair.sh'
-    eval "bash create-key-pair.sh"
-    # The Microsoft Corporation UEFI CA 2011
-    MS_UEFI_CA="tls/MicCorUEFCA2011_2011-06-27.crt"
-
-    echo gcloud compute images create "${IMAGE_WITH_CERTS}" \
-       --source-image "${SOURCE_IMAGE}" \
-       --source-image-project debian-cloud \
-       --signature-database-file="tls/db.der,${MS_UEFI_CA}" \
-       --guest-os-features="UEFI_COMPATIBLE"
-
-    # find source-image by:
-    # gcloud compute images list --project cloud-dataproc | grep dataproc-2-2-deb12
-
-    # The following can be used to create an instance in a similar
-    # state to the custom-image script runner VM.
-
-    #gcloud compute images create cuda-12-4-2-2-debian12-2024-10-06-04-57-install \
-    gcloud compute images create cuda-pre-init-2-0-debian10-2024-10-10-19-14 \
-      --source-image="${SOURCE_IMAGE}" \
-      --source-image-project=cloud-dataproc \
-      --signature-database-file="tls/db.der,${MS_UEFI_CA}" \
-      --guest-os-features=UEFI_COMPATIBLE \
-      --family=dataproc-custom-image
-
-    gcloud compute instances create dask-pre-init-2-0-debian10-2024-10-10-23-13-install \
-	   --project=cjac-2021-00 \
-	   --zone=us-west4-a \
-	   --network=projects/cjac-2021-00/global/networks/default \
-	   --machine-type=n1-highcpu-4 \
-	   --image-project cjac-2021-00 \
-	   --image=cuda-pre-init-2-0-debian10-2024-10-10-19-14 \
-	   --boot-disk-size=40G \
-	   --boot-disk-type=pd-ssd \
-	   --accelerator=type=nvidia-tesla-t4 \
-	   --maintenance-policy terminate \
-	   --service-account=sa-dask-pre-init@cjac-2021-00.iam.gserviceaccount.com \
-	   --scopes=cloud-platform \
-	   --metadata=shutdown-timer-in-sec=300,custom-sources-path=gs://cjac-dataproc-repro-1718310842/custom-image-dask-pre-init-2-0-debian10-2024-10-10-23-13-20241010-231355/sources,public_secret_name=efi-db-pub-key-042,private_secret_name=efi-db-priv-key-042,secret_project=cjac-2021-00,secret_version=1,dask-runtime=yarn,rapids-runtime=SPARK,cuda-version=12.4 \
-	   --metadata-from-file startup-script=startup_script/run.sh
-
+    echo "image generation not supported"
 fi
 
 CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
@@ -138,11 +101,8 @@ echo "it's not online."
     --boot-disk-type=pd-ssd \
     --image-project "${PROJECT_ID}" \
     --image="${IMAGE_WITH_CERTS}" \
+    --metadata="${metadata}" \
     --disk="auto-delete=no,name=${CONDA_DISK_FQN},mode=rw,boot=no,device-name=${CONDA_MIRROR_DISK_NAME},scope=regional"
-#  "${secure_boot_arg}" \
-#    cuda-2-2-rocky9-2024-10-06-23-52
-#    --image-project ${PROJECT_ID} \
-#    --image="${IMAGE_WITH_CERTS}"
 
   sleep 30
 fi
@@ -150,20 +110,11 @@ fi
 gcloud compute scp \
        "lib/conda-mirror/sync-mirror.sh" \
        --zone "${ZONE}" \
-       "${INSTANCE_NAME}:/root/" \
+       "${INSTANCE_NAME}:/tmp/" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
 
 
-# https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot
-# bootctl
-# od --address-radix=n --format=u1 /sys/firmware/efi/efivars/SecureBoot-*
-#    6   0   0   0   1
-# for var in PK KEK db dbx ; do efi-readvar -v $var -o old_${var}.esl ; done
-
-# Verify cert was installed:
-# sudo apt-get install efitools
-# sudo efi-readvar -v db
 DEBIAN_SOURCES="/etc/apt/sources.list.d/debian.sources"
 COMPONENTS="main contrib non-free non-free-firmware"
 gcloud compute ssh \
@@ -171,37 +122,5 @@ gcloud compute ssh \
        "${INSTANCE_NAME}" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
-
-       # --command "
-       # mokutil --sb-state
-       # sudo sed -i -e 's/Components: .*$/Components: ${COMPONENTS}/' ${DEBIAN_SOURCES} && echo 'sources updated' &&
-       # sudo apt-get -qq update && echo 'package cache updated' &&
-       # sudo apt-get -qq -y install dkms linux-headers-\$(uname -r) > /dev/null 2>&1 && echo 'dkms and kernel headers installed' &&
-       # sudo cp /tmp/tls/db.rsa /var/lib/dkms/mok.key &&
-       # sudo cp /tmp/tls/db.der /var/lib/dkms/mok.pub &&
-       # echo 'mok files created' &&
-       # sudo apt-get -qq -y install nvidia-open-kernel-dkms && echo 'nvidia open kernel package built' &&
-       # sudo modprobe nvidia-current-open &&
-       # echo 'kernel module loaded'"
-
-       # gcloud secrets versions access 1 --project=${PROJECT_ID} --secret=efi-db-priv-key | base64 --decode | sudo dd of=/var/lib/dkms/mok.key &&
-       # gcloud secrets versions access 1 --project=${PROJECT_ID} --secret=efi-db-pub-key | base64 --decode | sudo dd of=/var/lib/dkms/mok.pub &&
-
-
-       # --command "
-       # mokutil --sb-state
-       # sudo sed -i -e 's/Components: .*$/Components: ${COMPONENTS}/' ${DEBIAN_SOURCES} && echo 'sources updated' &&
-       # sudo apt-get -qq update && echo 'package cache updated' &&
-       # sudo apt-get -qq -y install dkms linux-headers-cloud-amd64 && echo 'dkms and kernel headers installed' &&
-       # gcloud secrets versions access 1 --project=${PROJECT_ID} --secret=efi-${EFI_VAR_NAME}-priv-key | dd of=/var/lib/dkms/mok.key
-       # sudo cp /tmp/tls/db.rsa /var/lib/dkms/mok.key &&
-       # gcloud secrets versions access 1 --project=${PROJECT_ID} --secret=efi-${EFI_VAR_NAME}-pub-key | dd of=/var/lib/dkms/mok.pub
-       # sudo cp /tmp/tls/db.der /var/lib/dkms/mok.pub && echo 'signing cert/key assigned' &&
-       # sudo apt-get -qq -y install nvidia-open-kernel-dkms && echo 'nvidia open kernel package built' &&
-       # sudo modprobe nvidia-current-open && echo 'kernel module loaded' &&
-       # sudo rm -rf /var/lib/dkms/mok.* && echo "removed key material"
-       # "
-
-#       sudo dkms build nvidia-current-open/525.147.05
 
 set +x
