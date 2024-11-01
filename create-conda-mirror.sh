@@ -53,7 +53,8 @@ function compare_versions_lt() {
 # boot a VM with this image
 MACHINE_TYPE=n1-standard-8
 INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
-if ( gcloud compute instances describe "${INSTANCE_NAME}" > /dev/null 2>&1 ) ; then
+if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
+           > "/tmp/${INSTANCE_NAME}.json" ) ; then
     echo "instance ${INSTANCE_NAME} already online."
     # TODO: Start if it is in stopped state
 else
