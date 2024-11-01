@@ -33,10 +33,10 @@ export ASN_NUMBER="$(jq -r .ASN_NUMBER env.json)"
 export IMAGE_VERSION="$(jq -r .IMAGE_VERSION env.json)"
 export REGION="$(jq -r .REGION env.json)"
 
-export ZONE="${REGION}-a"
+export ZONE="${REGION}-b"
 #export IMAGE_VERSION="2.0"
 #export IMAGE_VERSION="2.0-ubuntu18"
-export IMAGE_VERSION="2.0-rocky8"
+#export IMAGE_VERSION="2.0-rocky8"
 #export IMAGE_VERSION="2.0-debian10"
 #export IMAGE_VERSION="2.1"
 #export IMAGE_VERSION="2.1-ubuntu20"
@@ -46,7 +46,7 @@ export IMAGE_VERSION="2.0-rocky8"
 #export IMAGE_VERSION="2.2"
 #export IMAGE_VERSION="2.2.35-debian12"
 #export IMAGE_VERSION="2.2-ubuntu22"
-#export IMAGE_VERSION="2.2-rocky9"
+export IMAGE_VERSION="2.2-rocky9"
 #export IMAGE_VERSION="2.2-debian12"
 export DATAPROC_IMAGE_VERSION="${IMAGE_VERSION}"
 #export INIT_ACTIONS_ROOT="gs://goog-dataproc-initialization-actions-${REGION}"
@@ -68,6 +68,7 @@ export NETWORK_URI="https://www.googleapis.com/compute/v1/${NETWORK_URI_PARTIAL}
 export SUBNET="subnet-${CLUSTER_NAME}"
 export SUBNET_URI_PARTIAL="projects/${PROJECT_ID}/regions/${REGION}/subnetworks/${SUBNET}"
 export SUBNET_URI="https://www.googleapis.com/compute/v1/${SUBNET_URI_PARTIAL}"
+
 export FIREWALL="fw-${CLUSTER_NAME}"
 export TAGS="tag-${CLUSTER_NAME}"
 export ROUTER_NAME="router-${CLUSTER_NAME}"
@@ -113,15 +114,15 @@ export MSSQL_MACHINE_TYPE="n1-standard-8"
 export PHS_BUCKET="${BUCKET}/*/spark-job-history"
 export MR_HISTORY_BUCKET="${BUCKET}/*/mapreduce-job-history/done"
 
-export MACHINE_TYPE="n1-standard-16"
+export MACHINE_TYPE="n1-standard-8"
 #export MACHINE_TYPE="g2-standard-4"
 #export MACHINE_TYPE="e2-standard-2"
 #export MACHINE_TYPE="a2-highgpu-1g"
 #export MACHINE_TYPE="n2d-standard-8"
-export MASTER_MACHINE_TYPE="n1-standard-16"
+export MASTER_MACHINE_TYPE="n1-standard-8"
 #export MASTER_MACHINE_TYPE="a2-highgpu-2g"
 #export MASTER_MACHINE_TYPE="a3-highgpu-8g"
-export PRIMARY_MACHINE_TYPE="n1-standard-16"
+export PRIMARY_MACHINE_TYPE="n1-standard-8"
 #export PRIMARY_MACHINE_TYPE="g2-standard-4"
 #export PRIMARY_MACHINE_TYPE="e2-standard-4"
 #export PRIMARY_MACHINE_TYPE="${MACHINE_TYPE}"
@@ -129,6 +130,13 @@ export PRIMARY_MACHINE_TYPE="n1-standard-16"
 export SECONDARY_MACHINE_TYPE="${PRIMARY_MACHINE_TYPE}"
 
 # init/install_gpu_driver.sh
+# For regional conda mirrors (create-conda-mirror.sh)
+export CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
+export CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
+export CONDA_MM_TYPE="n1-standard-8"
+readonly -A CONDA_REGIONAL_MIRROR_ADDR=(
+    ["us-west4"]="10.42.79.42"
+)
 #export CUDA_VERSION=11.5
 #export CUDNN_VERSION="8.0.5.39"
 #export NCCL_VERSION="2.8.4"
@@ -229,11 +237,12 @@ fi
 #
 # MOK config for secure boot
 #
-modulus_md5sum=cd2bd1bdd9f9e4c43c12aecf6c338d6f
-private_secret_name=efi-db-priv-key-042
-public_secret_name=efi-db-pub-key-042
-secret_project=${PROJECT_ID}
-secret_version=1
+eval "$(bash create-key-pair.sh)"
+#modulus_md5sum=cd2bd1bdd9f9e4c43c12aecf6c338d6f
+#private_secret_name=efi-db-priv-key-042
+#public_secret_name=efi-db-pub-key-042
+#secret_project=${PROJECT_ID}
+#secret_version=1
 
 # The above are used by gpu/instal_gpu_driver.sh to suppy driver
 # signing material to DKMS These configuration options can be

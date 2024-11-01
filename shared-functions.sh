@@ -60,18 +60,18 @@ function create_dpgce_cluster() {
 
   date
   time gcloud dataproc clusters create ${CLUSTER_NAME} \
-    --master-boot-disk-type           pd-ssd \
-    --worker-boot-disk-type           pd-ssd \
     --secondary-worker-boot-disk-type pd-ssd \
-    --num-masters=1 \
-    --num-workers=2 \
-    --master-boot-disk-size 100 \
-    --worker-boot-disk-size 100 \
-    --secondary-worker-boot-disk-size 65 \
-    --master-machine-type "${MASTER_MACHINE_TYPE}" \
-    --worker-machine-type "${PRIMARY_MACHINE_TYPE}" \
+    --single-node \
     --master-accelerator "type=${MASTER_ACCELERATOR_TYPE}" \
     --worker-accelerator "type=${PRIMARY_ACCELERATOR_TYPE}" \
+    --master-machine-type "${MASTER_MACHINE_TYPE}" \
+    --worker-machine-type "${PRIMARY_MACHINE_TYPE}" \
+    --master-boot-disk-size           60 \
+    --worker-boot-disk-size           60 \
+    --secondary-worker-boot-disk-size 60 \
+    --master-boot-disk-type           pd-ssd \
+    --worker-boot-disk-type           pd-ssd \
+    --format=json \
     --region "${REGION}" \
     --zone "${ZONE}" \
     --subnet "${SUBNET}" \
@@ -91,8 +91,8 @@ function create_dpgce_cluster() {
     --metadata bigtable-instance=${BIGTABLE_INSTANCE} \
     --metadata rapids-runtime="DASK" \
     --metadata cuda-version="${CUDA_VERSION}" \
-    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-0-rocky8-2024-10-21-19-29" \
-    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh" \
+    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-10-31-07-41" \
+    --no-shielded-secure-boot \
     --initialization-action-timeout=90m \
     --optional-components DOCKER \
     --max-idle="${IDLE_TIMEOUT}" \
@@ -102,7 +102,10 @@ function create_dpgce_cluster() {
 
 }
 
+#    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
 #    --image-version "${IMAGE_VERSION}" \
+#    --image-version "${IMAGE_VERSION}" \
+#    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-10-24-09-12" \
 #    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
 #    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/dask/dask.sh,${INIT_ACTIONS_ROOT}/rapids/rapids.sh" \
@@ -811,6 +814,18 @@ function create_service_account() {
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${GSA}" \
     --role=roles/secretmanager.secretAccessor
+
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${GSA}" \
+    --role=roles/compute.viewer
+
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${GSA}" \
+    --role=roles/compute.instanceAdmin
+
+   gcloud iam service-accounts add-iam-policy-binding "${GSA}" \
+    --member="serviceAccount:${GSA}" \
+    --role=roles/iam.serviceAccountUser
 
   set +x
   echo "service account created"

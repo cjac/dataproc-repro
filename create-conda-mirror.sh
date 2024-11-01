@@ -1,8 +1,9 @@
 #!/bin/bash
 
+set -ex
 
-set -x
-set -e
+function compare_versions_lte() { [ "$1" = "$(echo -e "$1\n$2" | sort -V | head -n1)" ] ; }
+function compare_versions_lt() { [ "$1" = "$2" ] && return 1 || compare_versions_lte $1 $2 ; }
 
 . env.sh
 
@@ -14,14 +15,12 @@ eval "$(bash create-key-pair.sh)"
 metadata="public_secret_name=${public_secret_name},private_secret_name=${private_secret_name},secret_project=${secret_project},secret_version=${secret_version}"
 
 if ( gcloud compute images describe ${IMAGE_WITH_CERTS} > /dev/null 2>&1 ) ; then
-    echo "image ${IMAGE_WITH_CERTS} already exists"
+  echo "image ${IMAGE_WITH_CERTS} already exists"
 else
-    echo "image generation not supported in free version.
-          Please purchase subscription from Collier Technologies LLC."
+  echo "image generation not supported in free version.
+        Please purchase subscription from Collier Technologies LLC."
 fi
 
-CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
-CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
 if [[ "0" == "1" ]]; then
   # https://business-docs.anaconda.com/en/latest/admin/mirrors.html
   /dev/null <<EOF
@@ -40,24 +39,16 @@ EOF
       --region="${REGION}" \
       --type="pd-balanced" \
       --replica-zones="${replica_zones}" \
-      --size="15TB"
+      --size="300GB"
 fi
 
-function compare_versions_lte {
-  [ "$1" = "$(echo -e "$1\n$2" | sort -V | head -n1)" ]
-}
-
-function compare_versions_lt() {
-  [ "$1" = "$2" ] && return 1 || compare_versions_lte $1 $2
-}
-
 # boot a VM with this image
-MACHINE_TYPE=n1-standard-8
 INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
 if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
-           > "/tmp/${INSTANCE_NAME}.json" ) ; then
-    echo "instance ${INSTANCE_NAME} already online."
-    # TODO: Start if it is in stopped state
+         > "/tmp/${INSTANCE_NAME}.json" ) ; then
+  echo "instance ${INSTANCE_NAME} already online."
+  gcloud compute instances delete -q "${INSTANCE_NAME}"
+  # TODO: Start if it is in stopped state
 else
   echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
   secure_boot_arg="--shielded-secure-boot"
@@ -66,17 +57,24 @@ else
     secure_boot_arg="--no-shielded-secure-boot" ; fi
 
   gcloud compute instances create "${INSTANCE_NAME}" \
-    --machine-type="${MACHINE_TYPE}" \
-    --maintenance-policy TERMINATE \
+    --service-account="${GSA}" \
+    --machine-type="${CONDA_MM_TYPE}" \
     "${secure_boot_arg}" \
     --accelerator="type=nvidia-tesla-t4,count=4" \
+    --maintenance-policy TERMINATE \
     --zone="${ZONE}" \
+    --network-interface="subnet=${SUBNET},address=" \
     --boot-disk-size=50G \
     --boot-disk-type=pd-ssd \
     --image-project "${PROJECT_ID}" \
     --image="${IMAGE_WITH_CERTS}" \
     --metadata="${metadata}" \
+    --scopes=https://www.googleapis.com/auth/cloud-platform \
     --disk="auto-delete=no,name=${CONDA_DISK_FQN},mode=rw,boot=no,device-name=${CONDA_MIRROR_DISK_NAME},scope=regional"
+
+#      --metadata-from-file="startup-script=lib/conda-mirror/sync-mirror.sh" \
+#    --network-interface="subnet=${SUBNET},private-network-ip=${CONDA_REGIONAL_MIRROR_ADDR[${REGION}]},address=" \
+
 
   sleep 30
 fi
@@ -94,5 +92,3 @@ gcloud compute ssh \
        "${INSTANCE_NAME}" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
-
-set +x
