@@ -40,9 +40,9 @@ EOF
   gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}" \
       --project="${PROJECT_ID}" \
       --region="${REGION}" \
-      --type="pd-balanced" \
+      --type="pd-ssd" \
       --replica-zones="${replica_zones}" \
-      --size="15TB"
+      --size="300GB"
 fi
 
 # boot a VM with this image
