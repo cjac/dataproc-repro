@@ -74,41 +74,48 @@ if [[ -e "${mirror_block}" ]] ; then
   #    --upstream-channel=https://repo.anaconda.cloud/pkgs/main \
   #    --upstream-channel=https://repo.anaconda.cloud/pkgs/r \
 
-  CHANNEL_CMD=(
-      'conda-forge'
-      'rapidsai'
-      'nvidia'
-  )
+  
 
+  mirror_config="conda-mirror.yaml"
+  cat > "${mirror_config}" <<EOF
+blacklist:
+    - name: "*"
+whitelist:
+    - build: "*py3"
+EOF
   mirror_screenrc=/tmp/conda-mirror.screenrc
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1 ; num_channels=${#CHANNEL_CMD[@]}
-  for channel in 'conda-forge' 'rapidsai' 'nvidia' 'pkgs/main' 'pkgs/r' ; do
+  #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
+  for channel in 'rapidsai' 'nvidia' ; do
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
     num_threads=12
-    cmd=$(echo "${CONDA_MIRROR}" -vvv \
-      --upstream-channel="${channel}" \
-      --platform=linux-64            \
-      --temp-directory="${tmp_dir}"  \
-      --target-directory="${mirror_mountpoint}/${channel}" \
-      --num-threads="${num_threads}")
+    channel_path="${mirror_mountpoint}/${channel}"
+    cmd=$(echo "${CONDA_MIRROR}" -vvv        \
+      --upstream-channel="${channel}"        \
+              --platform="linux-64"          \
+                --config="${mirror_config}"  \
+        --temp-directory="${tmp_dir}"        \
+      --target-directory="${channel_path}"   \
+           --num-threads="${num_threads}"    \
+    --no-validate-target                     )
     echo "screen -L -t ${channel} ${i} $cmd" >> "${mirror_screenrc}"
     i="$(expr $i + 1)"
   done
   screen -US "conda-mirror" -c "${mirror_screenrc}"
 
-  echo systemctl stop apache2
-  echo umount "${mirror_mountpoint}"
+  systemctl stop apache2
+  umount "${mirror_mountpoint}"
 
   # detach the rw disk
-  echo gcloud compute instances detach-disk "$(hostname -s)" \
+  gcloud compute instances detach-disk "$(hostname -s)" \
     --disk       "${CONDA_DISK_FQN}" \
     --zone       "${ZONE}" \
     --disk-scope regional
 fi
 
 # attach disk with mode ro
-echo gcloud compute instances attach-disk "$(hostname -s)" \
+gcloud compute instances attach-disk "$(hostname -s)" \
   --disk        "${CONDA_DISK_FQN}" \
   --device-name "${CONDA_MIRROR_DISK_NAME}" \
   --zone        "${ZONE}" \
