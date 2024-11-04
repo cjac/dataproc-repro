@@ -14,6 +14,7 @@ DATAPROC_IMAGE_VERSION="2.2"
 eval "$(bash create-key-pair.sh)"
 metadata="public_secret_name=${public_secret_name},private_secret_name=${private_secret_name},secret_project=${secret_project},secret_version=${secret_version}"
 metadata="cleanup-after=yes"
+#metadata="cleanup-after=no"
 
 if ( gcloud compute images describe ${IMAGE_WITH_CERTS} > /dev/null 2>&1 ) ; then
   echo "image ${IMAGE_WITH_CERTS} already exists"
@@ -48,6 +49,10 @@ EOF
       --region="${REGION}" \
       --type="${disk_type}" \
       --replica-zones="${replica_zones}" \
+      --size="${disk_size_gb}GB"
+  gcloud compute disks resize "${CONDA_MIRROR_DISK_NAME}" \
+      --project="${PROJECT_ID}" \
+      --region="${REGION}" \
       --size="${disk_size_gb}GB"
 }
 

@@ -52,7 +52,8 @@ function umount_tmp_dir(){
 
 function install_conda_mirror(){
   if [[ ! -f "${CONDA_MIRROR}" ]] ; then
-    "${CONDA}" update -n base -c defaults conda
+#   Maybe update the conda repo before starting
+#    "${CONDA}" update -n base -c defaults conda
     "${CONDA}" install conda-mirror -c conda-forge
   fi
 }
@@ -81,6 +82,7 @@ function detach_conda_mirror_disk(){
 }
 
 function exit_handler(){
+  echo "exit handler invoked"
   set +e
   local cleanup_after="$(/usr/share/google/get_metadata_value attributes/cleanup-after || echo '')"
   echo "cleanup_after=${cleanup_after}"
@@ -138,7 +140,7 @@ function mount_mirror_block_device(){
   #/dev/sdb /var/www/html ext4 rw,relatime 0 0
   if grep -q "${mirror_mountpoint}" /proc/mounts ; then
     # If already mounted, find out the mode
-    current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[1]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
+    current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
     if [[ "${mode}" == "rw" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
       umount_mirror_block_device
@@ -146,12 +148,16 @@ function mount_mirror_block_device(){
       attach_conda_mirror_disk rw
       # If the above fails, it's sometimes because there are VMs which
       # have attached to the block device in ro mode
-      mount_mirror_block_device rw
+      options="${mode}"
+      if grep -q "${mirror_mountpoint}" /proc/mounts ; then
+	"options=remount,${mode}"
+      fi
+      mount -o "${options}" "${mirror_block}" "${mirror_mountpoint}"
     fi
   else
     echo "mounting ${mirror_block} on ${mirror_mountpoint}"
     mkdir -p "${mirror_mountpoint}"
-    mount "${mirror_block}" "${mirror_mountpoint}"
+#    mount "${mirror_block}" "${mirror_mountpoint}"
     mount -o "${mode}" "${mirror_block}" "${mirror_mountpoint}"
   fi
 }
@@ -196,10 +202,26 @@ function prepare_conda_mirror(){
 function create_conda_mirror(){
   mirror_config="conda-mirror.yaml"
   cat > "${mirror_config}" <<EOF
-blacklist:
-    - name: "*"
+platforms:
+    - "linux-64"
+    - "noarch"
 whitelist:
-    - name: "*py3"
+    - name: "rapids"
+    - name: "rapids-dask-dependency"
+    - name: "rapids-xgboost"
+    - name: "libxgboost"
+    - name: "xgboost"
+    - name: "dask"
+    - name: "dask-bigquery"
+    - name: "dask-cuda"
+    - name: "dask-ml"
+    - name: "dask-sql"
+    - name: "dask-yarn"
+    - name: "distributed"
+    - name: "fiona"
+    - name: "cudf"
+    - name: "numba"
+    - name: "rmm"
 EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
@@ -207,22 +229,29 @@ EOF
   for channel in 'rapidsai' 'nvidia' ; do
   #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
-    num_threads=12
+    num_threads=30
     channel_path="${mirror_mountpoint}/${channel}"
-    cmd=$(echo "${CONDA_MIRROR}" -vvv        \
-      --upstream-channel="${channel}"        \
-              --platform="linux-64"          \
-        --temp-directory="${tmp_dir}"        \
-      --target-directory="${channel_path}"   \
-           --num-threads="${num_threads}" )
-  #             --config="${mirror_config}"
-#    --no-validate-target \
-  	echo "screen -L -t ${channel} ${i} $cmd" >> "${mirror_screenrc}"
+    for platform in 'noarch' 'linux-64' ; do
+      cmd=$(echo "${CONDA_MIRROR}" -vvv -D     \
+        --upstream-channel="${channel}"        \
+                --platform="${platform}"       \
+          --temp-directory="${tmp_dir}"        \
+        --target-directory="${channel_path}"   \
+             --num-threads="${num_threads}"    \
+#                 --config="${mirror_config}"  \
+#     --no-validate-target \
+       )
+      # run the mirror sync command until it is successful
+      echo "screen -L -t ${channel}-${platform} ${i} bash -c '/bin/false ; while [[ '\$?' != '0' ]] ; do $cmd ; done'" >> "${mirror_screenrc}"
+    done
     i="$(expr $i + 1)"
   done
 
   # block until all channel mirrors are built and verified
+  echo "building channel mirrors"
+  date
   time screen -US "conda-mirror" -c "${mirror_screenrc}"
+  date
 }
 
 readonly timestamp="$(date +%F-%H-%M)"
