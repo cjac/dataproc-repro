@@ -821,7 +821,7 @@ function create_service_account() {
 
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${GSA}" \
-    --role=roles/compute.instanceAdmin
+    --role=roles/compute.instanceAdmin.v1
 
    gcloud iam service-accounts add-iam-policy-binding "${GSA}" \
     --member="serviceAccount:${GSA}" \
