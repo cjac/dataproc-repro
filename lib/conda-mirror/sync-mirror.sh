@@ -60,7 +60,7 @@ function install_thin_proxy(){
 
 </VirtualHost>
 EOF
-  cat > /var/www/thin-proxy.psgi <<EOF
+  cat > /var/www/thin-proxy.psgi <<'EOF'
 #!/usr/bin/perl -w
 use strict;
 
@@ -102,7 +102,7 @@ my $app = sub {
   $res->finalize;
 };
 EOF
-  cat > /var/www/startup.pl <<EOF
+  cat > /var/www/startup.pl <<'EOF'
 #!/usr/bin/env perl
 
 use strict;
