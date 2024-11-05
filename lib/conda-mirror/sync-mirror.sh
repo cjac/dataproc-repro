@@ -31,6 +31,114 @@ function install_apache(){
   rm -f "${mirror_mountpoint}/index.html"
 }
 
+function install_thin_proxy(){
+  dpkg -l libapache2-mod-perl2 > /dev/null 2>&1 \
+        || apt-get -y -qq install \
+         libplack-perl \
+	 libfile-libmagic-perl \
+         libapache2-mod-perl2 \
+	 libwww-mechanize-perl \
+	 > /dev/null 2>&1
+  APACHE_LOG_DIR="/var/log/apache2"
+  cat > /etc/apache2/sites-available/thin-proxy.conf <<EOF
+<VirtualHost 10.42.79.42:80>
+  ServerName thin-proxy
+
+  ServerAdmin webmaster@localhost
+  DocumentRoot /var/www/html/
+
+  <Location />
+    SetHandler perl-script
+    PerlResponseHandler Plack::Handler::Apache2
+    PerlSetVar psgi_app /var/www/thin-proxy.psgi
+  </Location>
+  # Optionally preload your apps in startup
+  PerlPostConfigRequire /var/www/startup.pl
+
+  ErrorLog ${APACHE_LOG_DIR}/thin-proxy/error.log
+  CustomLog ${APACHE_LOG_DIR}/thin-proxy/access.log combined
+
+</VirtualHost>
+EOF
+  cat > /var/www/thin-proxy.psgi <<EOF
+#!/usr/bin/perl -w
+use strict;
+
+package GoogleCloudDataproc::CondaMirror::ThinProxy;
+use Plack::Handler::Apache2;
+use Plack::Request;
+use Data::Dumper;
+use File::LibMagic;
+use WWW::Mechanize;
+
+my $app = sub {
+  my $env = shift; # PSGI env
+  my $req = Plack::Request->new($env);
+  my $path_info = $req->path_info;
+  my $requested_file=join('','/var/www/html',$path_info);
+
+  unless ( -f $requested_file ) {
+    # Unless the file already exists, fetch it from upstream
+    my $src_url = join('','https://conda.anaconda.org', $path_info);
+    my $response = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->get( $src_url );
+
+    if ( $response->is_success ) {
+      $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->save_content( $requested_file );
+    } else {
+      my $res = $req->new_response($response->code); # new Plack::Response
+      $res->body("file [$path_info] found neither under file://$requested_file nor on ${src_url}$/");
+      return $res->finalize;
+    }
+  }
+  my $size = (stat($requested_file))[7];
+  my $mime_type = File::LibMagic->new->info_from_filename(qq{$requested_file})->{mime_type};
+
+  my $res = $req->new_response(200); # new Plack::Response
+  $res->headers({ 'Content-Type' => $mime_type });
+  $res->content_length($size);
+  open(my($fh), q{<}, $requested_file);
+  $res->body($fh);
+
+  $res->finalize;
+};
+EOF
+  cat > /var/www/startup.pl <<EOF
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Apache2::ServerUtil ();
+use Cpanel::JSON::XS;
+use WWW::Mechanize ();
+
+use vars qw($repodata $mech);
+
+package GoogleCloudDataproc::CondaMirror::ThinProxy;
+
+BEGIN {
+  return unless Apache2::ServerUtil::restart_count() > 1;
+
+  require Plack::Handler::Apache2;
+  my $mech = WWW::Mechanize->new();
+  my $repodata = {};
+#  my $response = $mech->get('https://conda.anaconda.org/conda-forge/linux-64/repodata.json');
+#  if( $response->is_success ){
+#    $repodata->{'linux-64'}  = decode_json $response->decoded_content;
+#  }
+#  $mech->get('https://conda.anaconda.org/conda-forge/noarch/repodata.json');
+#  if( $response->is_success ){
+#    $repodata->{'noarch'}  = decode_json $response->decoded_content;
+#  }
+}
+
+1; # file must return true!
+EOF
+  chown www-data:www-data /var/www/thin-proxy.psgi
+  a2ensite thin-proxy
+  mkdir -p /var/log/apache2/thin-proxy
+  systemctl reload apache2
+}
+
 function mount_tmp_dir(){
   if grep -q "${tmp_dir}" /proc/mounts ; then return 0 ; fi
   echo "mounting ramdisk on ${tmp_dir}"
@@ -188,6 +296,7 @@ function prepare_conda_mirror(){
 
   mount_mirror_block_device rw
   install_apache
+  install_thin_proxy
   install_screen
   mount_tmp_dir
   install_conda_mirror
@@ -205,6 +314,8 @@ function create_conda_mirror(){
 platforms:
     - "linux-64"
     - "noarch"
+blacklist:
+    - name: "*"
 whitelist:
     - name: "rapids"
     - name: "rapids-dask-dependency"
@@ -226,19 +337,25 @@ EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-  for channel in 'rapidsai' 'nvidia' ; do
+  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
   #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
     num_threads=30
     channel_path="${mirror_mountpoint}/${channel}"
     for platform in 'noarch' 'linux-64' ; do
+      if [[ "${channel}" == "conda-forge" ]] ; then
+        if [[ "${platform}" == "noarch" ]] ; then continue ; fi
+        CONFIG_PARAM="--config=${mirror_config}"
+      else
+        CONFIG_PARAM=""
+      fi
       cmd=$(echo "${CONDA_MIRROR}" -vvv -D     \
         --upstream-channel="${channel}"        \
                 --platform="${platform}"       \
           --temp-directory="${tmp_dir}"        \
         --target-directory="${channel_path}"   \
              --num-threads="${num_threads}"    \
-#                 --config="${mirror_config}"  \
+                  "${CONFIG_PARAM}"
 #     --no-validate-target \
        )
       # run the mirror sync command until it is successful

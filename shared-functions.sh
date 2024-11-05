@@ -91,6 +91,7 @@ function create_dpgce_cluster() {
     --metadata bigtable-instance=${BIGTABLE_INSTANCE} \
     --metadata rapids-runtime="DASK" \
     --metadata cuda-version="${CUDA_VERSION}" \
+    --initialization-actions "${INIT_ACTIONS_ROOT}/rapids/rapids.sh" \
     --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-10-31-07-41" \
     --no-shielded-secure-boot \
     --initialization-action-timeout=90m \
