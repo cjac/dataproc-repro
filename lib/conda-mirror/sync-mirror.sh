@@ -214,7 +214,7 @@ function exit_handler(){
   local cleanup_after="$(/usr/share/google/get_metadata_value attributes/cleanup-after || echo '')"
   echo "cleanup_after=${cleanup_after}"
   case "${cleanup_after}" in
-    "yes" | "true" )
+    "y" | "yes" | "true" )
       # When the script finishes, detach and re-attach the disk in read-only mode
 
       # stop apache, since it serves http from the mount point
@@ -361,22 +361,35 @@ whitelist:
     - name: "dask-bigquery"
     - name: "dask-cuda"
     - name: "dask-ml"
+    - name: "dask-glm"
     - name: "dask-sql"
     - name: "dask-yarn"
     - name: "distributed"
     - name: "fiona"
     - name: "cudf"
+    - name: "dlpack"
+    - name: "cupy"
     - name: "numba"
+    - name: "networkx"
+    - name: "nvtx"
     - name: "rmm"
+    - name: "python"
+    - name: "python_abi"
+    - name: "tzdata"
+    - name: "pip"
+    - name: "pyarrow"
+    - name: "libcudf_cffi"
+    - name: "cachetools"
+    - name: "fastavro"
 EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
+  for channel in 'conda-forge' 'rapidsai' 'nvidia' 'dask' ; do
 #  for channel in 'rapidsai' 'nvidia' ; do
     #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
-    num_threads=30
+    num_threads=60
     channel_path="${mirror_mountpoint}/${channel}"
     for platform in 'noarch' 'linux-64' ; do
       if [[ "${channel}" == "conda-forge" ]] ; then

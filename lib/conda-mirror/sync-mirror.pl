@@ -79,7 +79,8 @@ sub start_thread($){
     my $response = $ua->get( $src_url );
     if ( $response->is_success ) { $ua->save_content( $tmp_file ); }
     move("$tmp_file","$output_file") or die "Copy failed: $!";
-    say sprintf( "Fetched $src_url (%d bytes) to $output_file", length $ua->content );
+    my($l)=length $ua->content;
+    say sprintf( "Fetched $src_url (%d bytes/%.2f MB) to $output_file", $l, $l/1024/1024 );
   };
 }
 
