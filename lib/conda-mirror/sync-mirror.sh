@@ -254,7 +254,7 @@ function mount_conda_mirror_disk() {
 }
 function mount_mirror_block_device(){
   mode="${1:-ro}"
-    
+
   if [[ ! -e "${mirror_block}" ]] ; then
     gcloud compute instances attach-disk "$(hostname -s)" \
       --disk        "${CONDA_DISK_FQN}" \
@@ -284,13 +284,19 @@ function mount_mirror_block_device(){
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk rw
+      mount_mirror_block_device rw
       # If the above fails, it's sometimes because there are VMs which
       # have attached to the block device in ro mode
-      options="${mode}"
-      if grep -q "${mirror_mountpoint}" /proc/mounts ; then
-	"options=remount,${mode}"
-      fi
+
       mount -o "${options}" "${mirror_block}" "${mirror_mountpoint}"
+    elif [[ "${mode}" == "ro" && "${current_mount_mode}" == "ro" ]] ; then
+      echo "remounting in read/write mode"
+      systemctl stop apache2
+      umount_mirror_block_device
+      detach_conda_mirror_disk
+      attach_conda_mirror_disk ro
+      mount_mirror_block_device ro
+
     fi
   else
     echo "mounting ${mirror_block} on ${mirror_mountpoint}"
@@ -298,6 +304,7 @@ function mount_mirror_block_device(){
 #    mount "${mirror_block}" "${mirror_mountpoint}"
     mount -o "${mode}" "${mirror_block}" "${mirror_mountpoint}"
   fi
+  current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
 }
 function umount_mirror_block_device(){
   sync
