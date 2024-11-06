@@ -169,11 +169,12 @@ function mount_tmp_dir(){
 }
 
 function umount_tmp_dir(){
-  mount -o remount,ro "${mirror_block}"
   sync
   sleep 3s
   sync
-  umount "${tmp_dir}"
+  if grep -q "${tmp_dir}" /proc/mounts ; then
+    umount "${tmp_dir}"
+  fi
 }
 
 function install_conda_mirror(){
@@ -231,7 +232,7 @@ function exit_handler(){
       # Take a snapshot of the archive
       replica_zones="$(gcloud compute zones list | \
         perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
-      echo gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}-${timestamp}" \
+      gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}-${timestamp}" \
         --project="${PROJECT_ID}" \
 	--region="${REGION}" \
 	--source-disk "${CONDA_MIRROR_DISK_NAME}" \
@@ -266,8 +267,8 @@ function mount_mirror_block_device(){
 
   if [[ "${mode}" == "rw" ]] ; then
     if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
-      if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || return -1 ; fi
-      e2fsck -fy "${mirror_block}"
+      if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || echo "could not umount" ; fi
+      e2fsck -fy "${mirror_block}" || echo 'unable to check filesystem'
     else
       echo "creating filesystem on mirror block device"
       mkfs.ext4 "${mirror_block}"
@@ -284,33 +285,30 @@ function mount_mirror_block_device(){
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk rw
-      mount_mirror_block_device rw
+
       # If the above fails, it's sometimes because there are VMs which
       # have attached to the block device in ro mode
-
-      mount -o "${options}" "${mirror_block}" "${mirror_mountpoint}"
     elif [[ "${mode}" == "ro" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
       systemctl stop apache2
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk ro
-      mount_mirror_block_device ro
 
     fi
   else
     echo "mounting ${mirror_block} on ${mirror_mountpoint}"
     mkdir -p "${mirror_mountpoint}"
-#    mount "${mirror_block}" "${mirror_mountpoint}"
-    mount -o "${mode}" "${mirror_block}" "${mirror_mountpoint}"
   fi
+  mount -o "${mode}" "${mirror_block}" "${mirror_mountpoint}"
+
   current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
 }
 function umount_mirror_block_device(){
   sync
   sleep 3s
   sync
-  umount "${mirror_block}"
+  umount "${mirror_block}" || echo "unable to umount ${mirror_block}"
 }
 
 function prepare_conda_mirror(){
@@ -374,8 +372,8 @@ EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-#  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
-  for channel in 'rapidsai' 'nvidia' ; do
+  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
+#  for channel in 'rapidsai' 'nvidia' ; do
     #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
     num_threads=30

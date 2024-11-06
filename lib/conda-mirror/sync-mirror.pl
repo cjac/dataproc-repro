@@ -12,6 +12,9 @@ use Coro::Semaphore;
 use Coro::LWP;
 use EV;
 
+use File::Copy;
+use File::Spec;
+
 my $mech = WWW::Mechanize->new();
 
 my $repodata = {};
@@ -44,12 +47,7 @@ foreach my $filename ( @$files ) {
   }elsif( exists $repodata->{'noarch'}->{packages}->{$filename} ){
     $fileobj = $repodata->{'noarch'}->{packages}->{$filename};
   }else{
-    push(@not_found, $filename);
-    next;
-  }
-  unless( exists $fileobj->{subdir} ){
-    push(@malformed, $filename);
-    next
+    $fileobj = { subdir => 'linux-64' }
   }
   if( -e "/var/www/html/conda-forge/$fileobj->{subdir}/$filename" ){
     say "file [$filename] already exists.  skipping";
@@ -57,6 +55,8 @@ foreach my $filename ( @$files ) {
     push(@url, "https://conda.anaconda.org/conda-forge/$fileobj->{subdir}/$filename");
   }
 }
+
+#say Data::Dumper::Dumper( { malformed =>  \@malformed, not_found => \@not_found } );
 
 say sprintf('there are %i packages to fetch', scalar(@url));
 
@@ -70,15 +70,16 @@ sub start_thread($){
   return async {
     my $path_info = $src_url;
     $path_info =~ s{^http(?:s)://conda.anaconda.org/(.+)$}{$1};
+    my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/tmp/$path_info");
+    my $tmp_file = "/tmp/$tmp_filename";
     my $output_file = "/var/www/html/$path_info";
     say "Waiting for semaphore";
     my $guard = $sem->guard;
-    say "Starting $src_url";
     my $ua = WWW::Mechanize->new();
     my $response = $ua->get( $src_url );
-    say sprintf( "Fetched $src_url, %d bytes", length $ua->content );
-    if ( $response->is_success ) { $ua->save_content( $output_file ); }
-    say "Write to [$output_file] of [$src_url] complete";
+    if ( $response->is_success ) { $ua->save_content( $tmp_file ); }
+    move("$tmp_file","$output_file") or die "Copy failed: $!";
+    say sprintf( "Fetched $src_url (%d bytes) to $output_file", length $ua->content );
   };
 }
 
