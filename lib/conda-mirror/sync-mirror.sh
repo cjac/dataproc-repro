@@ -38,6 +38,8 @@ function install_thin_proxy(){
 	 libfile-libmagic-perl \
          libapache2-mod-perl2 \
 	 libwww-mechanize-perl \
+	 libcoro-perl \
+	 libev-perl \
 	 > /dev/null 2>&1
   APACHE_LOG_DIR="/var/log/apache2"
   cat > /etc/apache2/sites-available/thin-proxy.conf <<EOF
@@ -52,7 +54,7 @@ function install_thin_proxy(){
     PerlResponseHandler Plack::Handler::Apache2
     PerlSetVar psgi_app /var/www/thin-proxy.psgi
   </Location>
-  # Optionally preload your apps in startup
+  # perform some startup operations
   PerlPostConfigRequire /var/www/startup.pl
 
   ErrorLog ${APACHE_LOG_DIR}/thin-proxy/error.log
@@ -70,6 +72,7 @@ use Plack::Request;
 use Data::Dumper;
 use File::LibMagic;
 use WWW::Mechanize;
+use APR::Const -compile => qw(:error SUCCESS);
 
 my $app = sub {
   my $env = shift; # PSGI env
@@ -77,7 +80,18 @@ my $app = sub {
   my $path_info = $req->path_info;
   my $requested_file=join('','/var/www/html',$path_info);
 
-  unless ( -f $requested_file ) {
+  my $s = $GoogleCloudDataproc::CondaMirror::ThinProxy::svr;
+
+  # When requesting repodata.json, always fetch from upstream
+  if ( $path_info =~ /repodata\.json(\.zst|\.gz|\.xz|.zip)?$/ ){
+    my $suffix = $1;
+    $requested_file='/tmp/repodata.json' . ( $suffix ? $suffix : '' );
+    unlink $requested_file if -f $requested_file;
+  }
+
+  if( ! -f $requested_file ) {
+    $s->log_serror(Apache2::Log::LOG_MARK, Apache2::Const::LOG_INFO,
+                     APR::Const::SUCCESS, "requested file ${path_info}");
     # Unless the file already exists, fetch it from upstream
     my $src_url = join('','https://conda.anaconda.org', $path_info);
     my $response = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->get( $src_url );
@@ -90,11 +104,11 @@ my $app = sub {
       return $res->finalize;
     }
   }
+
   my $size = (stat($requested_file))[7];
-  my $mime_type = File::LibMagic->new->info_from_filename(qq{$requested_file})->{mime_type};
 
   my $res = $req->new_response(200); # new Plack::Response
-  $res->headers({ 'Content-Type' => $mime_type });
+  $res->headers({ 'Content-Type' => File::LibMagic->new->info_from_filename(qq{$requested_file})->{mime_type} });
   $res->content_length($size);
   open(my($fh), q{<}, $requested_file);
   $res->body($fh);
@@ -108,19 +122,23 @@ EOF
 use strict;
 use warnings;
 use Apache2::ServerUtil ();
+use Apache2::Log;
 use Cpanel::JSON::XS;
 use WWW::Mechanize ();
 
-use vars qw($repodata $mech);
+use vars qw($repodata $mech $svr);
 
 package GoogleCloudDataproc::CondaMirror::ThinProxy;
 
 BEGIN {
+  use Apache2::Const -compile => qw(LOG_DEBUG LOG_INFO);
   return unless Apache2::ServerUtil::restart_count() > 1;
 
   require Plack::Handler::Apache2;
-  my $mech = WWW::Mechanize->new();
-  my $repodata = {};
+  our $mech = WWW::Mechanize->new();
+  our $svr = Apache2::ServerUtil->server;
+  $svr->loglevel(Apache2::Const::LOG_INFO);
+  our $repodata = {};
 #  my $response = $mech->get('https://conda.anaconda.org/conda-forge/linux-64/repodata.json');
 #  if( $response->is_success ){
 #    $repodata->{'linux-64'}  = decode_json $response->decoded_content;
@@ -136,7 +154,7 @@ EOF
   chown www-data:www-data /var/www/thin-proxy.psgi
   a2ensite thin-proxy
   mkdir -p /var/log/apache2/thin-proxy
-  systemctl reload apache2
+  systemctl restart apache2
 }
 
 function mount_tmp_dir(){
@@ -213,7 +231,7 @@ function exit_handler(){
       # Take a snapshot of the archive
       replica_zones="$(gcloud compute zones list | \
         perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
-      gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}-${timestamp}" \
+      echo gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}-${timestamp}" \
         --project="${PROJECT_ID}" \
 	--region="${REGION}" \
 	--source-disk "${CONDA_MIRROR_DISK_NAME}" \
@@ -237,20 +255,32 @@ function mount_conda_mirror_disk() {
 function mount_mirror_block_device(){
   mode="${1:-ro}"
     
-  if [[ ! -e "${mirror_block}" ]] ; then return 0 ; fi
-
-  if [[ "${mode}" == "rw" ]] && ! e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
-    echo "creating filesystem on mirror block device"
-    mkfs.ext4 "${mirror_block}"
+  if [[ ! -e "${mirror_block}" ]] ; then
+    gcloud compute instances attach-disk "$(hostname -s)" \
+      --disk        "${CONDA_DISK_FQN}" \
+      --device-name "${CONDA_MIRROR_DISK_NAME}" \
+      --disk-scope  "regional" \
+      --zone        "${ZONE}"  \
+      --mode        "${mode}"
   fi
 
-  mount_line=""
+  if [[ "${mode}" == "rw" ]] ; then
+    if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
+      if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || return -1 ; fi
+      e2fsck -fy "${mirror_block}"
+    else
+      echo "creating filesystem on mirror block device"
+      mkfs.ext4 "${mirror_block}"
+    fi
+  fi
+
   #/dev/sdb /var/www/html ext4 rw,relatime 0 0
   if grep -q "${mirror_mountpoint}" /proc/mounts ; then
     # If already mounted, find out the mode
     current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
     if [[ "${mode}" == "rw" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
+      systemctl stop apache2
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk rw
@@ -337,8 +367,9 @@ EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
-  #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
+#  for channel in 'conda-forge' 'rapidsai' 'nvidia' ; do
+  for channel in 'rapidsai' 'nvidia' ; do
+    #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
     #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
     num_threads=30
     channel_path="${mirror_mountpoint}/${channel}"
@@ -363,6 +394,12 @@ EOF
     done
     i="$(expr $i + 1)"
   done
+
+  # Verifying that the mirror disk is mounted
+  if ! grep -q "${mirror_mountpoint}" /proc/mounts ; then
+    echo "mirror did not get mounted"
+    return -1
+  fi
 
   # block until all channel mirrors are built and verified
   echo "building channel mirrors"
