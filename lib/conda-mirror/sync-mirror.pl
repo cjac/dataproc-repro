@@ -30,16 +30,31 @@ if( $response->is_success ){
   $repodata->{'noarch'}  = decode_json $response->decoded_content;
 }
 
-my $files;
+
+my @fetchable=();
+my @skipped=();
+my @not_found=();
+my @malformed=();
+
+foreach my $platform ( qw{ linux-64 noarch } ){
+  while( my( $pkg, $pkgobj ) = each %{$repodata->{"$platform"}->{packages}} ){
+    if( -e "/var/www/html/conda-forge/$pkgobj->{subdir}/$pkg" ){
+#      print('.');
+#      say "file [$pkg] already exists.  skipping";
+      push(@skipped, $pkg);
+    } else {
+      push(@fetchable, { url => "https://conda.anaconda.org/conda-forge/${platform}/$pkg", ua => $mech });
+    }
+  }
+}
+
+=pod
+
+my $files; # Gathered from the output of the python conda-mirror program
 $response = $mech->get('file:package-list.txt');
 if( $response->is_success ){
   $files  = decode_json $response->decoded_content;
 }
-
-my @url=();
-my @not_found=();
-my @malformed=();
-
 foreach my $filename ( @$files ) {
   my $fileobj = undef;
   if( exists $repodata->{'linux-64'}->{packages}->{$filename} ){
@@ -47,7 +62,13 @@ foreach my $filename ( @$files ) {
   }elsif( exists $repodata->{'noarch'}->{packages}->{$filename} ){
     $fileobj = $repodata->{'noarch'}->{packages}->{$filename};
   }else{
-    $fileobj = { subdir => 'linux-64' }
+    if( -e "/var/www/html/conda-forge/$fileobj->{subdir}/$filename" ){
+      say "file [$filename] already exists.  skipping";
+      next;
+    }
+    push(@url, "https://conda.anaconda.org/conda-forge/linux-64/$filename");
+    push(@url, "https://conda.anaconda.org/conda-forge/noarch/$filename");
+    next;
   }
   if( -e "/var/www/html/conda-forge/$fileobj->{subdir}/$filename" ){
     say "file [$filename] already exists.  skipping";
@@ -56,34 +77,38 @@ foreach my $filename ( @$files ) {
   }
 }
 
-#say Data::Dumper::Dumper( { malformed =>  \@malformed, not_found => \@not_found } );
+=cut
 
-say sprintf('there are %i packages to fetch', scalar(@url));
+#say Data::Dumper::Dumper( { malformed =>  \@malformed, not_found => \@not_found } );
+print($/);
+
+say sprintf('There have been %i packages fetched', scalar(@skipped));
+say sprintf('there are %i packages left to fetch', scalar(@fetchable));
 
 say "press enter to continue";
 my $hold=<STDIN>;
 
-my $sem = Coro::Semaphore->new(384);
+my $sem = Coro::Semaphore->new(256);
 
 sub start_thread($){
-  my $src_url = shift;
+  my $fetchable = shift;
   return async {
-    my $path_info = $src_url;
+    my $path_info = $fetchable->{url};
     $path_info =~ s{^http(?:s)://conda.anaconda.org/(.+)$}{$1};
     my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/tmp/$path_info");
     my $tmp_file = "/tmp/$tmp_filename";
     my $output_file = "/var/www/html/$path_info";
-    say "Waiting for semaphore";
     my $guard = $sem->guard;
-    my $ua = WWW::Mechanize->new();
-    my $response = $ua->get( $src_url );
+#    my $ua = WWW::Mechanize->new();
+    my $ua = $fetchable->{ua};
+    my $response = $ua->get( $fetchable->{url} );
     if ( $response->is_success ) { $ua->save_content( $tmp_file ); }
     move("$tmp_file","$output_file") or die "Copy failed: $!";
     my($l)=length $ua->content;
-    say sprintf( "Fetched $src_url (%d bytes/%.2f MB) to $output_file", $l, $l/1024/1024 );
+    say sprintf( "Fetched %64s (%12d bytes/%.6f MB) to %90s", $tmp_filename, $l, $l/1024/1024, $output_file );
   };
 }
 
-start_thread $_ for @url;
+start_thread $_ for @fetchable;
 
 EV::loop;
