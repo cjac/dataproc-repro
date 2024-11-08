@@ -219,7 +219,7 @@ function exit_handler(){
       # When the script finishes, detach and re-attach the disk in read-only mode
 
       # stop apache, since it serves http from the mount point
-      systemctl stop apache2
+      systemctl stop apache2 || echo "could not stop apache2"
       # unmount the rw disk, detach the virtual device
       umount_mirror_block_device
       detach_conda_mirror_disk
@@ -271,8 +271,8 @@ function mount_mirror_block_device(){
     # on the mirror block device
     if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
       if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || echo "could not umount" ; fi
-      echo "ensuring the the filesystem is clean"
-      e2fsck -fy "${mirror_block}"
+      echo "ensuring that the filesystem is clean"
+      e2fsck -fy "${mirror_block}" || exit -1
     else
       echo "creating filesystem on mirror block device"
       mkfs.ext4 "${mirror_block}"
@@ -285,7 +285,7 @@ function mount_mirror_block_device(){
     current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
     if [[ "${mode}" == "rw" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
-      systemctl stop apache2
+      systemctl stop apache2 || echo "could not stop apache2"
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk rw
@@ -294,7 +294,7 @@ function mount_mirror_block_device(){
       # have attached to the block device in ro mode
     elif [[ "${mode}" == "ro" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
-      systemctl stop apache2
+      systemctl stop apache2 || echo "could not stop apache2"
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk ro
@@ -376,6 +376,7 @@ whitelist:
     - name: "cupy"
     - name: "numba"
     - name: "networkx"
+    - name: "nx-cugraph"
     - name: "nvtx"
     - name: "rmm"
     - name: "python"
@@ -390,7 +391,7 @@ EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-  for channel in 'rapidsai' 'nvidia' 'conda-forge' ; do
+  for channel in 'nvidia' 'rapidsai' 'r' 'main' 'conda-forge' ; do
 #  for channel in 'rapidsai' 'nvidia' ; do
     #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
 #    num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
@@ -402,12 +403,6 @@ EOF
 #    num_threads=6144
     channel_path="${mirror_mountpoint}/${channel}"
     for platform in 'noarch' 'linux-64' ; do
-      if [[ "${channel}" == "conda-forge" ]] ; then
-        if [[ "${platform}" == "noarch" ]] ; then continue ; fi
-        CONFIG_PARAM="--config=${mirror_config}"
-      else
-        CONFIG_PARAM=""
-      fi
 #      cmd=$( echo \
     time "${CONDA_MIRROR}" -vvv -D             \
         --upstream-channel="${channel}"        \
