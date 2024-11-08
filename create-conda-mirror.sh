@@ -54,17 +54,11 @@ EOF
       --project="${PROJECT_ID}" \
       --region="${REGION}" \
       --size="${disk_size_gb}GB"
+
 }
 
-# boot a VM with this image
-INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
-if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
-         > "/tmp/${INSTANCE_NAME}.json" ) ; then
-  echo "instance ${INSTANCE_NAME} already online."
-  gcloud compute instances delete -q "${INSTANCE_NAME}"
-  # TODO: Start if it is in stopped state
-else
-  echo "instance ${INSTANCE_NAME} is not extant.  Creating now."
+function start_conda_mirror_instance(){
+
   secure_boot_arg="--shielded-secure-boot"
   # Dataproc images prior to 2.2 do not recognize the trust database
   if (compare_versions_lt "${DATAPROC_IMAGE_VERSION}" "2.2") ; then
@@ -74,7 +68,7 @@ else
     --service-account="${GSA}" \
     --machine-type="${CONDA_MM_TYPE}" \
     "${secure_boot_arg}" \
-    --accelerator="type=nvidia-tesla-t4" \
+    --accelerator="type=nvidia-tesla-t4,count=4" \
     --maintenance-policy TERMINATE \
     --zone="${ZONE}" \
     --network-interface="subnet=${SUBNET},private-network-ip=${CONDA_REGIONAL_MIRROR_ADDR[${REGION}]},address=" \
@@ -84,13 +78,22 @@ else
     --image="${IMAGE_WITH_CERTS}" \
     --metadata="${metadata}" \
     --scopes=https://www.googleapis.com/auth/cloud-platform \
-    --disk="auto-delete=no,name=${CONDA_DISK_FQN},mode=rw,boot=no,device-name=${CONDA_MIRROR_DISK_NAME},scope=regional" \
-    --metadata-from-file="startup-script=lib/conda-mirror/sync-mirror.sh"
-#    --network-interface="subnet=${SUBNET},address=" \
+    --disk="auto-delete=no,name=${CONDA_DISK_FQN},mode=rw,boot=no,device-name=${CONDA_MIRROR_DISK_NAME},scope=regional" #\
+#    --metadata-from-file="startup-script=lib/conda-mirror/sync-mirror.sh"
+#    --network-interface="subnet=${SUBNET},address="
+}
 
-
-  sleep 30
+# boot a VM with this image
+INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
+if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
+         > "/tmp/${INSTANCE_NAME}.json" ) ; then
+  echo "instance ${INSTANCE_NAME} already online."
+  gcloud compute instances delete -q "${INSTANCE_NAME}"
+else
+  echo "instance ${INSTANCE_NAME} is not yet extant."
 fi
+start_conda_mirror_instance
+sleep 45
 
 # copy script for installing conda-mirror
 gcloud compute scp \

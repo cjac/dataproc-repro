@@ -40,6 +40,7 @@ function install_thin_proxy(){
 	 libwww-mechanize-perl \
 	 libcoro-perl \
 	 libev-perl \
+	 libdatetime-perl \
 	 > /dev/null 2>&1
   APACHE_LOG_DIR="/var/log/apache2"
   cat > /etc/apache2/sites-available/thin-proxy.conf <<EOF
@@ -266,9 +267,12 @@ function mount_mirror_block_device(){
   fi
 
   if [[ "${mode}" == "rw" ]] ; then
+    # The following command checks whether an ext4 filesystem exists
+    # on the mirror block device
     if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
       if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || echo "could not umount" ; fi
-      e2fsck -fy "${mirror_block}" || echo 'unable to check filesystem'
+      echo "ensuring the the filesystem is clean"
+      e2fsck -fy "${mirror_block}"
     else
       echo "creating filesystem on mirror block device"
       mkfs.ext4 "${mirror_block}"
@@ -329,6 +333,9 @@ function prepare_conda_mirror(){
   # clean up after
   trap exit_handler EXIT
 
+  # Allow processes to use a lot of filehandles
+  ulimit -n 4096
+
   mount_mirror_block_device rw
   install_apache
   install_thin_proxy
@@ -349,8 +356,6 @@ function create_conda_mirror(){
 platforms:
     - "linux-64"
     - "noarch"
-blacklist:
-    - name: "*"
 whitelist:
     - name: "rapids"
     - name: "rapids-dask-dependency"
@@ -385,11 +390,16 @@ EOF
 
   echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
   i=1
-  for channel in 'conda-forge' 'rapidsai' 'nvidia' 'dask' ; do
+  for channel in 'rapidsai' 'nvidia' 'conda-forge' ; do
 #  for channel in 'rapidsai' 'nvidia' ; do
     #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
-    #num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
-    num_threads=60
+#    num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
+#    num_threads=60
+    num_threads=96
+#    num_threads=192
+#    num_threads=768
+#    num_threads=1536
+#    num_threads=6144
     channel_path="${mirror_mountpoint}/${channel}"
     for platform in 'noarch' 'linux-64' ; do
       if [[ "${channel}" == "conda-forge" ]] ; then
@@ -398,17 +408,18 @@ EOF
       else
         CONFIG_PARAM=""
       fi
-      cmd=$(echo "${CONDA_MIRROR}" -vvv -D     \
+#      cmd=$( echo \
+    time "${CONDA_MIRROR}" -vvv -D             \
         --upstream-channel="${channel}"        \
                 --platform="${platform}"       \
           --temp-directory="${tmp_dir}"        \
         --target-directory="${channel_path}"   \
              --num-threads="${num_threads}"    \
-                  "${CONFIG_PARAM}"
+                  --config="${mirror_config}"
 #     --no-validate-target \
-       )
+#       )
       # run the mirror sync command until it is successful
-      echo "screen -L -t ${channel}-${platform} ${i} bash -c '/bin/false ; while [[ '\$?' != '0' ]] ; do $cmd ; done'" >> "${mirror_screenrc}"
+#      echo "screen -L -t ${channel}-${platform} ${i} bash -c '/bin/false ; while [[ '\$?' != '0' ]] ; do $cmd ; done'" >> "${mirror_screenrc}"
     done
     i="$(expr $i + 1)"
   done
@@ -421,9 +432,9 @@ EOF
 
   # block until all channel mirrors are built and verified
   echo "building channel mirrors"
-  date
-  time screen -US "conda-mirror" -c "${mirror_screenrc}"
-  date
+#  date
+#  time screen -US "conda-mirror" -c "${mirror_screenrc}"
+#  date
 }
 
 readonly timestamp="$(date +%F-%H-%M)"
