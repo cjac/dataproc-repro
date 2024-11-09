@@ -114,9 +114,9 @@ sub start_thread($){
     my $ua = WWW::Mechanize->new( autocheck => 0 );
     my $path_info = $url;
     $path_info =~ s{^http(?:s)://conda.anaconda.org/(.+)$}{$1};
-    my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/tmp/$path_info");
-    my( $tmp_file,            $output_file,               $guard ) =
-      ( "/tmp/$tmp_filename", "/var/www/html/$path_info", $sem->guard );
+    my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/mnt/tmp/$path_info");
+    my( $tmp_file,                $output_file,               $guard ) =
+      ( "/mnt/tmp/$tmp_filename", "/var/www/html/$path_info", $sem->guard );
     my $response = $ua->get( $url );
     my $tries = 0;
     until( $ua->response()->is_success || $tries++ > 5){
@@ -141,17 +141,18 @@ sub start_thread($){
 
 my $completed = 0;
 my $nproc = qx(nproc);
+my $num_forks = $nproc * 0.8;
 my($left) = scalar(@url);
-my($buffer_size) = POSIX::ceil($left / ($nproc*0.6));
-my($length) = $left < $buffer_size ? $left : $buffer_size;
+my($buffer_size) = POSIX::ceil($left / $num_forks);
 
 say('-'x80, $/, "total: ", scalar( @skipped ), " skipped, $left to fetch");
 
 if( $left > 1000 ){
-  say "running as $num_coroutines coroutines in ", POSIX::ceil($nproc*0.6) ," new forked processes";
+  say "running as $num_coroutines coroutines in $num_forks new forked processes";
   my(@children) = ();
   while ( @url ) {
-    ($length) = $left < $buffer_size ? $left : $buffer_size;
+    $left = scalar(@url);
+    my($length) = $left < $buffer_size ? $left : $buffer_size;
     my(@batch) = splice(@url,0,$length);
     my $pid = fork();
     die "unable to fork: $!" unless defined($pid);

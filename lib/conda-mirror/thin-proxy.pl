@@ -16,6 +16,7 @@ my $app = sub {
   my $requested_file=join('','/var/www/html',$path_info);
 
   my $s = $GoogleCloudDataproc::CondaMirror::ThinProxy::svr;
+  my $mech = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech;
 
   # When requesting repodata.json, always fetch from upstream
   if ( $path_info =~ /repodata\.json(\.zst|\.gz|\.xz|.zip)?$/ ){
@@ -29,10 +30,9 @@ my $app = sub {
                      APR::Const::SUCCESS, "requested file ${path_info}");
     # Unless the file already exists, fetch it from upstream
     my $src_url = join('','https://conda.anaconda.org', $path_info);
-    my $response = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->get( $src_url );
 
-    if ( $response->is_success ) {
-      $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->save_content( $requested_file );
+    if ( my $response = $mech->get( $src_url )->is_success() ) {
+      $mech->save_content( $requested_file );
     } else {
       my $res = $req->new_response($response->code); # new Plack::Response
       $res->body("file [$path_info] found neither under file://$requested_file nor on ${src_url}$/");

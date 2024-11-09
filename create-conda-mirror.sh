@@ -96,8 +96,8 @@ start_conda_mirror_instance
 sleep 45
 
 # copy script for installing conda-mirror
-gcloud compute scp \
-       "lib/conda-mirror/sync-mirror.sh" \
+gcloud compute scp --recurse \
+       "lib/conda-mirror" \
        --zone "${ZONE}" \
        "${INSTANCE_NAME}:/tmp/" \
        --project "${PROJECT_ID}" \
@@ -107,4 +107,5 @@ gcloud compute ssh \
        --zone "${ZONE}" \
        "${INSTANCE_NAME}" \
        --project "${PROJECT_ID}" \
-       --tunnel-through-iap
+       --tunnel-through-iap \
+       --command "screen -d -m -US smbros bash -x /tmp/conda-mirror/sync-mirror.sh"

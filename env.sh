@@ -134,6 +134,7 @@ export SECONDARY_MACHINE_TYPE="${PRIMARY_MACHINE_TYPE}"
 export CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
 export CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
 export CONDA_MM_TYPE="n1-standard-16"
+#export CONDA_MM_TYPE="n1-standard-96"
 readonly -A CONDA_REGIONAL_MIRROR_ADDR=(
     ["us-west4"]="10.42.79.42"
 )

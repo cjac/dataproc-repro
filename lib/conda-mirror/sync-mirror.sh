@@ -12,6 +12,7 @@
 #
 
 set -ex
+this_file=$0;
 
 #
 # This script is copied to the conda mirror synchronization host.  The
@@ -82,6 +83,7 @@ my $app = sub {
   my $requested_file=join('','/var/www/html',$path_info);
 
   my $s = $GoogleCloudDataproc::CondaMirror::ThinProxy::svr;
+  my $mech = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech;
 
   # When requesting repodata.json, always fetch from upstream
   if ( $path_info =~ /repodata\.json(\.zst|\.gz|\.xz|.zip)?$/ ){
@@ -95,10 +97,9 @@ my $app = sub {
                      APR::Const::SUCCESS, "requested file ${path_info}");
     # Unless the file already exists, fetch it from upstream
     my $src_url = join('','https://conda.anaconda.org', $path_info);
-    my $response = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->get( $src_url );
 
-    if ( $response->is_success ) {
-      $GoogleCloudDataproc::CondaMirror::ThinProxy::mech->save_content( $requested_file );
+    if ( my $response = $mech->get( $src_url )->is_success() ) {
+      $mech->save_content( $requested_file );
     } else {
       my $res = $req->new_response($response->code); # new Plack::Response
       $res->body("file [$path_info] found neither under file://$requested_file nor on ${src_url}$/");
@@ -239,6 +240,10 @@ function exit_handler(){
 	--source-disk "${CONDA_MIRROR_DISK_NAME}" \
         --source-disk-region="${REGION}" \
         --replica-zones="${replica_zones}"
+
+      attach_conda_mirror_disk rw
+      mount_mirror_block_device rw
+      systemctl start apache2
     ;;
     "*" )
       echo "no operation"
@@ -325,7 +330,6 @@ function prepare_conda_mirror(){
   CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
   CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
 
-  mirror_screenrc=/tmp/conda-mirror.screenrc
   mirror_block="/dev/disk/by-id/google-${CONDA_MIRROR_DISK_NAME}"
   mirror_mountpoint="/var/www/html"
   tmp_dir="/mnt/shm"
@@ -344,13 +348,17 @@ function prepare_conda_mirror(){
   install_conda_mirror
 }
 
+function create_conda_mirror(){
+  time perl '/tmp/conda-mirror/sync-mirror.pl'
+}
+
 #time "${CONDA_MIRROR}" -v -D \
 #    --upstream-channel=defaults    \
 #    --upstream-channel=https://repo.anaconda.cloud/pkgs/main \
 #    --upstream-channel=https://repo.anaconda.cloud/pkgs/r \
 # https://conda.anaconda.org/main/linux-64/repodata.json is the correct repodata URL for Anaconda Distribution
 
-function create_conda_mirror(){
+function validate_conda_mirror(){
   mirror_config="conda-mirror.yaml"
   cat > "${mirror_config}" <<EOF
 platforms:
@@ -389,32 +397,32 @@ whitelist:
     - name: "fastavro"
 EOF
 
-  echo "# conda-mirror.screenrc" > "${mirror_screenrc}"
-  i=1
+  i=10
   for channel in 'nvidia' 'rapidsai' 'r' 'main' 'conda-forge' ; do
-#  for channel in 'rapidsai' 'nvidia' ; do
-    #  + 'conda-forge' # Mirroring this at the current rate of 1.2 seconds per package may take 1.5 years
-#    num_threads="$(expr $(expr $(nproc) / ${num_channels})  - 1)"
-#    num_threads=60
-    num_threads=96
-#    num_threads=192
-#    num_threads=768
-#    num_threads=1536
-#    num_threads=6144
+    num_threads="$(nproc)"
     channel_path="${mirror_mountpoint}/${channel}"
     for platform in 'noarch' 'linux-64' ; do
-#      cmd=$( echo \
-    time "${CONDA_MIRROR}" -vvv -D             \
+      screen_title="conda-mirror-${channel}-${platform}"
+      mirror_screenrc="/tmp/${screen_title}.screenrc"
+      echo "# $screen_title}.screenrc" > "${mirror_screenrc}"
+      # consider -vvv for debugging
+      cmd=$( echo \
+    "${CONDA_MIRROR}"                          \
         --upstream-channel="${channel}"        \
                 --platform="${platform}"       \
           --temp-directory="${tmp_dir}"        \
         --target-directory="${channel_path}"   \
              --num-threads="${num_threads}"    \
-                  --config="${mirror_config}"
+                  --config="${mirror_config}"  \
+	      --no-progres
 #     --no-validate-target \
-#       )
-      # run the mirror sync command until it is successful
-#      echo "screen -L -t ${channel}-${platform} ${i} bash -c '/bin/false ; while [[ '\$?' != '0' ]] ; do $cmd ; done'" >> "${mirror_screenrc}"
+	 )
+      # run the mirror sync command in a screen session until it is successful
+      echo "screen -L -t ${channel}-${platform} ${i} bash -c '/bin/false ; while [[ '\$?' != '0' ]] ; do $cmd ; done'" \
+	   > "${mirror_screenrc}"
+      time screen -US "${screen_title}" -c "${mirror_screenrc}"
+#      eval "$cmd"
+
     done
     i="$(expr $i + 1)"
   done
@@ -436,3 +444,4 @@ readonly timestamp="$(date +%F-%H-%M)"
 
 prepare_conda_mirror
 create_conda_mirror
+validate_conda_mirror
