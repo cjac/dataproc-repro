@@ -28,7 +28,7 @@ foreach my $platform ( qw( linux-64 noarch ) ){
   foreach my $channel ( qw(  nvidia rapidsai r main conda-forge  ) ){
 #foreach my $platform ( qw( linux-64 ) ){
 #  foreach my $channel ( qw( main ) ){
-    qx(mkdir -p /var/www/html/${channel}/${platform});
+    qx(mkdir -p /var/www/html/conda.anaconda.org/${channel}/${platform});
     my $cache_file = "/tmp/${channel}-${platform}-repodata.json";
     if ( -e  $cache_file ){
       $mech->get( "file:$cache_file" );
@@ -91,10 +91,10 @@ $VAR1 = {
 	# Do some filtering here, optionally
 	# my $epoch2017 = 1514764799000;
 	# next if( $pkgobj->{timestamp} < $epoch2017 );
-	if ( -e "/var/www/html/${channel}/${platform}/${pkg}" ) {
+	if ( -e "/var/www/html/conda.anaconda.org/${channel}/${platform}/${pkg}" ) {
 	  push(@this_skipped, $pkg);
 	} else {
-	  push(@this_url, "https://conda.anaconda.org/${channel}/${platform}/$pkg");
+	  push(@this_url, "https://conda.anaconda.org/${channel}/${platform}/${pkg}");
 	}
       }
 
@@ -114,18 +114,19 @@ sub start_thread($){
     my $ua = WWW::Mechanize->new( autocheck => 0 );
     my $path_info = $url;
     $path_info =~ s{^http(?:s)://conda.anaconda.org/(.+)$}{$1};
-    my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/mnt/tmp/$path_info");
-    my( $tmp_file,                $output_file,               $guard ) =
-      ( "/mnt/tmp/$tmp_filename", "/var/www/html/$path_info", $sem->guard );
+
+    my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/mnt/shm/$path_info");
+    my( $tmp_path,                $output_file,                                  $guard ) =
+      ( "/mnt/shm/$tmp_filename", "/var/www/html/conda.anaconda.org/$path_info", $sem->guard );
     my $response = $ua->get( $url );
     my $tries = 0;
     until( $ua->response()->is_success || $tries++ > 5){
       $ua->get( $url );
     }
     if ( $response->is_success ) {
-      $ua->save_content( $tmp_file );
+      $ua->save_content( $tmp_path );
       # move from temp to final directory - possible failure situation
-      move("$tmp_file","$output_file.tmp")  or die "Copy failed [$tmp_file] -> [$output_file.tmp]: $!";
+      move("$tmp_path","$output_file.tmp")  or die "Copy failed [$tmp_path] -> [$output_file.tmp]: $!";
       # rename output file from temporary name - unlikely to cause failure
       move("$output_file.tmp",$output_file) or die "Copy failed [$output_file.tmp] -> [$output_file]: $!";
       my($l)=length $ua->content;

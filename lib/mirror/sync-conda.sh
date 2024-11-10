@@ -80,7 +80,7 @@ my $app = sub {
   my $env = shift; # PSGI env
   my $req = Plack::Request->new($env);
   my $path_info = $req->path_info;
-  my $requested_file=join('','/var/www/html',$path_info);
+  my $requested_file=join('','/var/www/html/conda.anaconda.org',$path_info);
 
   my $s = $GoogleCloudDataproc::CondaMirror::ThinProxy::svr;
   my $mech = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech;
@@ -241,6 +241,8 @@ function exit_handler(){
         --source-disk-region="${REGION}" \
         --replica-zones="${replica_zones}"
 
+      umount_mirror_block_device
+      detach_conda_mirror_disk
       attach_conda_mirror_disk rw
       mount_mirror_block_device rw
       systemctl start apache2
@@ -413,8 +415,8 @@ EOF
           --temp-directory="${tmp_dir}"        \
         --target-directory="${channel_path}"   \
              --num-threads="${num_threads}"    \
-                  --config="${mirror_config}"  \
-	      --no-progres
+                  --config="${mirror_config}"
+#	      --no-progres
 #     --no-validate-target \
 	 )
       # run the mirror sync command in a screen session until it is successful

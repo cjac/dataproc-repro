@@ -13,7 +13,7 @@ my $app = sub {
   my $env = shift; # PSGI env
   my $req = Plack::Request->new($env);
   my $path_info = $req->path_info;
-  my $requested_file=join('','/var/www/html',$path_info);
+  my $requested_file=join('','/var/www/html/conda.anaconda.org',$path_info);
 
   my $s = $GoogleCloudDataproc::CondaMirror::ThinProxy::svr;
   my $mech = $GoogleCloudDataproc::CondaMirror::ThinProxy::mech;
