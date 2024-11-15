@@ -87,12 +87,13 @@ function create_dpgce_cluster() {
     --metadata "secret_project=${secret_project}" \
     --metadata "secret_version=${secret_version}" \
     --metadata "modulus_md5sum=${modulus_md5sum}" \
+    --metadata "rapids-mirror-disk=${RAPIDS_MIRROR_DISK_NAME}" \
+    --metadata "rapids-mirror-host=${RAPIDS_REGIONAL_MIRROR_ADDR[${REGION}]}"   \
     --metadata dask-runtime="standalone" \
     --metadata bigtable-instance=${BIGTABLE_INSTANCE} \
     --metadata rapids-runtime="DASK" \
     --metadata cuda-version="${CUDA_VERSION}" \
-    --initialization-actions "${INIT_ACTIONS_ROOT}/rapids/rapids.sh" \
-    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-10-31-07-41" \
+    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-11-14-20-00" \
     --no-shielded-secure-boot \
     --initialization-action-timeout=90m \
     --optional-components DOCKER \
@@ -102,9 +103,9 @@ function create_dpgce_cluster() {
   set +x
 
 }
-
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
-#    --image-version "${IMAGE_VERSION}" \
+#    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-1-debian11-2024-10-31-07-41" \
+#    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
 #    --image-version "${IMAGE_VERSION}" \
 #    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-10-24-09-12" \
 #    --image "projects/${PROJECT_ID}/global/images/rapids-pre-init-2-2-debian12-2024-10-15-02-54" \

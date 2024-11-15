@@ -130,12 +130,12 @@ export PRIMARY_MACHINE_TYPE="n1-standard-8"
 export SECONDARY_MACHINE_TYPE="${PRIMARY_MACHINE_TYPE}"
 
 # init/install_gpu_driver.sh
-# For regional conda mirrors (create-conda-mirror.sh)
-export CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
-export CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
-export CONDA_MM_TYPE="n1-standard-16"
-#export CONDA_MM_TYPE="n1-standard-96"
-readonly -A CONDA_REGIONAL_MIRROR_ADDR=(
+# For regional rapids mirrors (create-rapids-mirror.sh)
+export RAPIDS_MIRROR_DISK_NAME="rapids-mirror"
+export RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}"
+export RAPIDS_MM_TYPE="n1-standard-16"
+#export RAPIDS_MM_TYPE="n1-standard-96"
+declare -A RAPIDS_REGIONAL_MIRROR_ADDR=(
     ["us-west4"]="10.42.79.42"
 )
 #export CUDA_VERSION=11.5
