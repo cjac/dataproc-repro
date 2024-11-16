@@ -37,20 +37,20 @@ their entirety! Due to this, active mirrors can take a long time to
 complete.
 
 EOF
-  gcloud compute disks delete "${CONDA_MIRROR_DISK_NAME}" \
+  gcloud compute disks delete "${RAPIDS_MIRROR_DISK_NAME}" \
       --project="${PROJECT_ID}" \
       --region="${REGION}"
   # replicate to the first two zones in the region, with asciibetical sort order
   # TODO: translate to json for easier value extraction
   replica_zones="$(gcloud compute zones list | \
     perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
-  gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}" \
+  gcloud compute disks create "${RAPIDS_MIRROR_DISK_NAME}" \
       --project="${PROJECT_ID}" \
       --region="${REGION}" \
       --type="${disk_type}" \
       --replica-zones="${replica_zones}" \
       --size="${disk_size_gb}GB"
-  gcloud compute disks resize "${CONDA_MIRROR_DISK_NAME}" \
+  gcloud compute disks resize "${RAPIDS_MIRROR_DISK_NAME}" \
       --project="${PROJECT_ID}" \
       --region="${REGION}" \
       --size="${disk_size_gb}GB"
@@ -66,19 +66,19 @@ function start_conda_mirror_instance(){
 
   gcloud compute instances create "${INSTANCE_NAME}" \
     --service-account="${GSA}" \
-    --machine-type="${CONDA_MM_TYPE}" \
+    --machine-type="${RAPIDS_MM_TYPE}" \
     "${secure_boot_arg}" \
     --accelerator="type=nvidia-tesla-t4,count=4" \
     --maintenance-policy TERMINATE \
     --zone="${ZONE}" \
-    --network-interface="subnet=${SUBNET},private-network-ip=${CONDA_REGIONAL_MIRROR_ADDR[${REGION}]},address=" \
+    --network-interface="subnet=${SUBNET},private-network-ip=${RAPIDS_REGIONAL_MIRROR_ADDR[${REGION}]},address=" \
     --boot-disk-size=50G \
     --boot-disk-type=pd-ssd \
     --image-project "${PROJECT_ID}" \
     --image="${IMAGE_WITH_CERTS}" \
     --metadata="${metadata}" \
     --scopes=https://www.googleapis.com/auth/cloud-platform \
-    --disk="auto-delete=no,name=${CONDA_DISK_FQN},mode=rw,boot=no,device-name=${CONDA_MIRROR_DISK_NAME},scope=regional" #\
+    --disk="auto-delete=no,name=${RAPIDS_DISK_FQN},mode=rw,boot=no,device-name=${RAPIDS_MIRROR_DISK_NAME},scope=regional" #\
 #    --metadata-from-file="startup-script=lib/conda-mirror/sync-mirror.sh"
 #    --network-interface="subnet=${SUBNET},address="
 }
