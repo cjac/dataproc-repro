@@ -16,7 +16,7 @@ this_file=$0;
 
 #
 # This script is copied to the conda mirror synchronization host.  The
-# host must have ${CONDA_DISK_FQN} attached in rw mode. After running
+# host must have ${RAPIDS_DISK_FQN} attached in rw mode. After running
 # this script, the attached disk will have an ext4 filesystem written
 # directy to it, no partitions.  On this filesystem, conda channels
 # will be mirrored to the / directory
@@ -196,8 +196,8 @@ function attach_conda_mirror_disk(){
   mode="${1:-ro}"
   # attach disk to this host with mode ro by default
   gcloud compute instances attach-disk "$(hostname -s)" \
-    --disk        "${CONDA_DISK_FQN}" \
-    --device-name "${CONDA_MIRROR_DISK_NAME}" \
+    --disk        "${RAPIDS_DISK_FQN}" \
+    --device-name "${RAPIDS_MIRROR_DISK_NAME}" \
     --disk-scope  "regional" \
     --zone        "${ZONE}"  \
     --mode        "${mode}"
@@ -205,7 +205,7 @@ function attach_conda_mirror_disk(){
 
 function detach_conda_mirror_disk(){
   gcloud compute instances detach-disk "$(hostname -s)" \
-    --disk       "${CONDA_DISK_FQN}" \
+    --disk       "${RAPIDS_DISK_FQN}" \
     --zone       "${ZONE}" \
     --disk-scope regional
 }
@@ -234,10 +234,10 @@ function exit_handler(){
       # Take a snapshot of the archive
       replica_zones="$(gcloud compute zones list | \
         perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
-      gcloud compute disks create "${CONDA_MIRROR_DISK_NAME}-${timestamp}" \
+      gcloud compute disks create "${RAPIDS_MIRROR_DISK_NAME}-${timestamp}" \
         --project="${PROJECT_ID}" \
 	--region="${REGION}" \
-	--source-disk "${CONDA_MIRROR_DISK_NAME}" \
+	--source-disk "${RAPIDS_MIRROR_DISK_NAME}" \
         --source-disk-region="${REGION}" \
         --replica-zones="${replica_zones}"
 
@@ -266,8 +266,8 @@ function mount_mirror_block_device(){
 
   if [[ ! -e "${mirror_block}" ]] ; then
     gcloud compute instances attach-disk "$(hostname -s)" \
-      --disk        "${CONDA_DISK_FQN}" \
-      --device-name "${CONDA_MIRROR_DISK_NAME}" \
+      --disk        "${RAPIDS_DISK_FQN}" \
+      --device-name "${RAPIDS_MIRROR_DISK_NAME}" \
       --disk-scope  "regional" \
       --zone        "${ZONE}"  \
       --mode        "${mode}"
@@ -329,10 +329,10 @@ function prepare_conda_mirror(){
   PROJECT_ID="$(gcloud config get project)"
   CONDA="/opt/conda/miniconda3/bin/conda"
   CONDA_MIRROR="${CONDA}-mirror"
-  CONDA_MIRROR_DISK_NAME="conda-mirror-${REGION}"
-  CONDA_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${CONDA_MIRROR_DISK_NAME}"
+  RAPIDS_MIRROR_DISK_NAME="rapids-mirror-${REGION}"
+  RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}"
 
-  mirror_block="/dev/disk/by-id/google-${CONDA_MIRROR_DISK_NAME}"
+  mirror_block="/dev/disk/by-id/google-${RAPIDS_MIRROR_DISK_NAME}"
   mirror_mountpoint="/var/www/html"
   tmp_dir="/mnt/shm"
 
@@ -445,5 +445,5 @@ EOF
 readonly timestamp="$(date +%F-%H-%M)"
 
 prepare_conda_mirror
-create_conda_mirror
-validate_conda_mirror
+#create_conda_mirror
+#validate_conda_mirror

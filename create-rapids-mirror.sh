@@ -57,7 +57,7 @@ EOF
 
 }
 
-function start_conda_mirror_instance(){
+function start_rapids_mirror_instance(){
 
   secure_boot_arg="--shielded-secure-boot"
   # Dataproc images prior to 2.2 do not recognize the trust database
@@ -79,12 +79,12 @@ function start_conda_mirror_instance(){
     --metadata="${metadata}" \
     --scopes=https://www.googleapis.com/auth/cloud-platform \
     --disk="auto-delete=no,name=${RAPIDS_DISK_FQN},mode=rw,boot=no,device-name=${RAPIDS_MIRROR_DISK_NAME},scope=regional" #\
-#    --metadata-from-file="startup-script=lib/conda-mirror/sync-mirror.sh"
+#    --metadata-from-file="startup-script=lib/mirror/sync-conda.sh"
 #    --network-interface="subnet=${SUBNET},address="
 }
 
 # boot a VM with this image
-INSTANCE_NAME="dpgce-conda-mirror-${REGION}"
+INSTANCE_NAME="dpgce-rapids-mirror-${REGION}"
 if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
          > "/tmp/${INSTANCE_NAME}.json" ) ; then
   echo "instance ${INSTANCE_NAME} already online."
@@ -92,20 +92,21 @@ if ( gcloud compute instances describe "${INSTANCE_NAME}" --format json \
 else
   echo "instance ${INSTANCE_NAME} is not yet extant."
 fi
-start_conda_mirror_instance
+start_rapids_mirror_instance
 sleep 45
 
-# copy script for installing conda-mirror
+# copy mirror scripts to instance
 gcloud compute scp --recurse \
-       "lib/conda-mirror" \
+       "lib/mirror" \
        --zone "${ZONE}" \
        "${INSTANCE_NAME}:/tmp/" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap
 
+# run script for installing conda-mirror
 gcloud compute ssh \
        --zone "${ZONE}" \
        "${INSTANCE_NAME}" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap \
-       --command "screen -d -m -US smbros bash -x /tmp/conda-mirror/sync-mirror.sh"
+       --command "screen -d -m -US smbros bash -x /tmp/mirror/sync-conda.sh"

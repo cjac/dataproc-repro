@@ -24,11 +24,13 @@ my $mech = WWW::Mechanize->new();
 
 my( @url, @skipped )=();
 
+my $mntpt = '/var/www/html';
+
 foreach my $platform ( qw( linux-64 noarch ) ){
   foreach my $channel ( qw(  nvidia rapidsai r main conda-forge  ) ){
 #foreach my $platform ( qw( linux-64 ) ){
 #  foreach my $channel ( qw( main ) ){
-    qx(mkdir -p /var/www/html/conda.anaconda.org/${channel}/${platform});
+    qx(mkdir -p ${mntpt}/conda.anaconda.org/${channel}/${platform});
     my $cache_file = "/tmp/${channel}-${platform}-repodata.json";
     if ( -e  $cache_file ){
       $mech->get( "file:$cache_file" );
@@ -91,7 +93,7 @@ $VAR1 = {
 	# Do some filtering here, optionally
 	# my $epoch2017 = 1514764799000;
 	# next if( $pkgobj->{timestamp} < $epoch2017 );
-	if ( -e "/var/www/html/conda.anaconda.org/${channel}/${platform}/${pkg}" ) {
+	if ( -e "${mntpt}/conda.anaconda.org/${channel}/${platform}/${pkg}" ) {
 	  push(@this_skipped, $pkg);
 	} else {
 	  push(@this_url, "https://conda.anaconda.org/${channel}/${platform}/${pkg}");
@@ -117,7 +119,7 @@ sub start_thread($){
 
     my($vol,$tmp_dir,$tmp_filename) = File::Spec->splitpath("/mnt/shm/$path_info");
     my( $tmp_path,                $output_file,                                  $guard ) =
-      ( "/mnt/shm/$tmp_filename", "/var/www/html/conda.anaconda.org/$path_info", $sem->guard );
+      ( "/mnt/shm/$tmp_filename", "${mntpt}/conda.anaconda.org/$path_info", $sem->guard );
     my $response = $ua->get( $url );
     my $tries = 0;
     until( $ua->response()->is_success || $tries++ > 5){
@@ -133,7 +135,7 @@ sub start_thread($){
       print('.');
 #      say sprintf( "Fetched %64s (%12d bytes/%09.2f MB) to %90s", $tmp_filename, $l, $l/1024/1024, $output_file );
     }else{
-      say sprintf( "Failed to fetch %64s to %90s", $url, $output_file );
+      say sprintf( "Failed to fetch: curl -o %s %s (%s)", $output_file, $url, $response->status_line );
     }
     $ua->delete();
   };
@@ -175,4 +177,17 @@ if( $left > 1000 ){
   say "running as $num_coroutines coroutines";
   start_thread $_ for @url;
   EV::loop;
+}
+
+
+# Now that we have downloaded all files in the repodata.json files, copy them to the mirror mountpoint
+foreach my $platform ( qw( linux-64 noarch ) ){
+  foreach my $channel ( qw(  nvidia rapidsai r main conda-forge  ) ){
+    my( $cache_file, $dst_file ) =
+      ( "/tmp/${channel}-${platform}-repodata.json",
+	"${mntpt}/conda.anaconda.org/${channel}/${platform}/repodata.json" );
+    copy $cache_file, $dst_file;
+    qx{zstd  -fk "$dst_file"};
+    qx{bzip2 -fk "$dst_file"};
+  }
 }
