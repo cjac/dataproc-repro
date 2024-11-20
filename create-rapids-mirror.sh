@@ -72,7 +72,7 @@ function start_rapids_mirror_instance(){
     --maintenance-policy TERMINATE \
     --zone="${ZONE}" \
     --network-interface="subnet=${SUBNET},private-network-ip=${RAPIDS_REGIONAL_MIRROR_ADDR[${REGION}]},address=" \
-    --boot-disk-size=50G \
+    --boot-disk-size=100G \
     --boot-disk-type=pd-ssd \
     --image-project "${PROJECT_ID}" \
     --image="${IMAGE_WITH_CERTS}" \
@@ -109,4 +109,4 @@ gcloud compute ssh \
        "${INSTANCE_NAME}" \
        --project "${PROJECT_ID}" \
        --tunnel-through-iap \
-       --command "screen -d -m -US smbros bash -x /tmp/mirror/sync-conda.sh"
+#       --command "screen -d -m -US smbros bash -x /tmp/mirror/sync-conda.sh"
