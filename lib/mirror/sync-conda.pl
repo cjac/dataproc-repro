@@ -151,7 +151,7 @@ my($buffer_size) = POSIX::ceil($left / $num_forks);
 say('-'x80, $/, "total: ", scalar( @present ), " present, $left to fetch");
 
 if( $left == 0 ){
-  say "all packages present.  Exiting now."
+  say "all packages present.  Exiting now.";
   exit 0;
 }elsif( $left > 1000 ){
   say spritnf('running as %i coroutines in %i new forked processes', $num_coroutines, POSIX::floor( $num_forks ));
@@ -182,7 +182,7 @@ if( $left == 0 ){
   EV::loop;
 }
 
-print "Download complete.  Now compressing repodata.json...";
+print $/, "Download complete.  Now compressing repodata.json...";
 # Now that we have downloaded all files in the repodata.json files, copy them to the mirror mountpoint
 foreach my $platform ( qw( linux-64 noarch ) ){
   foreach my $channel ( qw(  nvidia rapidsai r main conda-forge  ) ){

@@ -202,8 +202,6 @@ function umount_tmp_dir(){
 
 function install_conda_mirror(){
   if [[ ! -f "${CONDA_MIRROR}" ]] ; then
-#   Maybe update the conda repo before starting
-#    "${CONDA}" update -n base -c defaults conda
     "${CONDA}" install conda-mirror -c conda-forge
   fi
 }
@@ -225,6 +223,12 @@ function attach_conda_mirror_disk(){
 }
 
 function detach_conda_mirror_disk(){
+  # Clean the filesystem
+  current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
+  if [[ "${current_mount_mode}" == "rw" ]] ; then
+    execute_with_retries e2fsck -fy "${mirror_block}"
+  fi
+
   gcloud compute instances detach-disk "$(hostname -s)" \
     --disk       "${RAPIDS_DISK_FQN}" \
     --zone       "${ZONE}" \
@@ -311,8 +315,6 @@ function mount_mirror_block_device(){
     # on the mirror block device
     if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
       if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || echo "could not umount" ; fi
-      echo "ensuring that the filesystem is clean"
-      execute_with_retries e2fsck -fy "${mirror_block}"
     else
       echo "creating filesystem on mirror block device"
       mkfs.ext4 "${mirror_block}"
@@ -364,8 +366,9 @@ function prepare_conda_mirror(){
   ZONE="$(echo $zone | sed -e 's:.*/::')"
   REGION="$(echo ${ZONE} | perl -pe 's/^(.+)-[^-]+$/$1/')"
   PROJECT_ID="$(gcloud config get project)"
-  CONDA="/opt/conda/miniconda3/bin/conda"
-  MAMBA="/opt/conda/miniconda3/bin/mamba"
+  CONDA_PFX="/opt/conda/miniconda3"
+  CONDA="${CONDA_PFX}/bin/conda"
+  MAMBA="${CONDA_PFX}/bin/mamba"
   CONDA_MIRROR="${CONDA}-mirror"
   RAPIDS_MIRROR_DISK_NAME="rapids-mirror-${REGION}"
   RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}"
@@ -392,18 +395,49 @@ function prepare_conda_mirror(){
   # Cache results of build on mirror disk
   mkdir -p "${conda_cache_dir}"
   "${CONDA}" config --add pkgs_dirs "${conda_cache_dir}" > /dev/null 2>&1
-  install_conda_mirror
+  # Unpin conda
+#  sed -i -e 's/^conda .*$//' /opt/conda/miniconda3/conda-meta/pinned
+  #   Maybe update the conda install before starting
+#  "${MAMBA}" update -n base -c defaults conda mamba libmamba libmambapy conda-libmamba-solver
+
+  #install_conda_mirror
+}
+
+function rm_conda_env(){
+  env_name="$1"
+  env_dir="/opt/conda/miniconda3/envs/${env_name}"
+  if test -d "${env_dir}" ; then
+    "${CONDA}" remove -n "${env_name}" --all > /dev/null 2>&1 || rm -rf "${env_dir}"
+  fi
+}
+
+function create_build_cache(){
+
+  CONDA_EXE="${CONDA_PFX}/bin/conda"
+  CONDA_PYTHON_EXE="${CONDA_PFX}/bin/python"
+  PATH="${CONDA_PFX}/bin/condabin:${CONDA_PFX}/bin:${PATH}"
+
+  declare -A specs_to_cache=(
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask<2022.2' 'dask-yarn=0.9' 'distributed<2022.2'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask<2022.2' 'dask-yarn=0.9' 'distributed<2022.2' fiona<1.8.22"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' 'dask<2022.2' 'python>=3.9' 'dask-yarn=0.9' 'distributed<2022.2'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' 'dask<2022.2' 'python>=3.9' 'dask-yarn=0.9' 'distributed<2022.2' 'fiona<1.8.22'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask>=2024.5' 'python>=3.11'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' dask 'python>=3.9'"
+    "'cuda-version>=12,<13' 'rapids>=23.11' dask cudf numba 'python>=3.11'"
+    "pytorch tensorflow"
+  )
+
+  rm_conda_env myenv
+
+  for spec in "${specs_to_cache[@]}"; do
+    time "${MAMBA}" create -q -m -n "myenv" -y --no-channel-priority -c conda-forge -c nvidia -c rapidsai ${spec}
+    rm_conda_env myenv
+  done
 }
 
 function create_conda_mirror(){
   time perl '/tmp/mirror/sync-conda.pl'
-  # consider -vvv for debugging
-  cmd=$(echo "${MAMBA}" install -y --no-channel-priority \
-    -c conda-forge -c nvidia -c rapidsai \
-    pytorch tensorflow "'cuda-version>=12,<13'" "'rapids>=23.11'" dask cudf numba "'python>=3.11'")
-  echo "${cmd}"
-  read placeholder
-  eval "${cmd}"
 }
 
 #time "${CONDA_MIRROR}" -v -D \
@@ -497,7 +531,8 @@ EOF
 readonly timestamp="$(date +%F-%H-%M)"
 
 prepare_conda_mirror
-create_conda_mirror
+#create_conda_mirror
+create_build_cache
 #validate_conda_mirror
 
 MIRROR_BUILT=1
