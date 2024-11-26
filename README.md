@@ -22,7 +22,7 @@ This README file describes how to use the dataproc-repro scripts to reproduce
 common Dataproc cluster creation problems relating to the GCE startup script,
 Dataproc startup script, and Dataproc initialization-actions scripts.
 
-## Dataproc on GCE Environment configuration
+## Deploying a Dataproc Cluster on GCE
 
 ```
 $ git clone https://github.com/LLC-Technologies-Collier/dataproc-repro.git
@@ -30,6 +30,8 @@ $ cd dataproc-repro
 $ git checkout rapids-mirror-20241115
 $ cp env.json.sample env.json
 $ vi env.json
+# optionally, exercise a more recent version of the installer
+$ cp .../initialization-actions/gpu/install_gpu_driver.sh init/gpu/
 $ bash create-dpgce.sh
 ```
 
