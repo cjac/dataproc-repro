@@ -46,8 +46,8 @@ export ZONE="${REGION}-b"
 #export IMAGE_VERSION="2.2"
 #export IMAGE_VERSION="2.2.35-debian12"
 #export IMAGE_VERSION="2.2-ubuntu22"
-export IMAGE_VERSION="2.2-rocky9"
-#export IMAGE_VERSION="2.2-debian12"
+#export IMAGE_VERSION="2.2-rocky9"
+export IMAGE_VERSION="2.2-debian12"
 export DATAPROC_IMAGE_VERSION="${IMAGE_VERSION}"
 #export INIT_ACTIONS_ROOT="gs://goog-dataproc-initialization-actions-${REGION}"
 export AUTOSCALING_POLICY_NAME=aspolicy-${CLUSTER_NAME}
@@ -132,8 +132,8 @@ export SECONDARY_MACHINE_TYPE="${PRIMARY_MACHINE_TYPE}"
 
 # init/install_gpu_driver.sh
 # For regional rapids mirrors (create-rapids-mirror.sh)
-export RAPIDS_MIRROR_DISK_NAME="rapids-mirror"
-export RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}-${REGION}"
+export RAPIDS_MIRROR_DISK_NAME="rapids-mirror-${REGION}"
+export RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}"
 #export RAPIDS_MM_TYPE="n1-standard-16"
 export RAPIDS_MM_TYPE="n1-standard-96"
 declare -A RAPIDS_REGIONAL_MIRROR_ADDR=(
@@ -154,6 +154,7 @@ export PRIMARY_ACCELERATOR_TYPE="${ACCELERATOR_TYPE}"
 export SECONDARY_ACCELERATOR_TYPE="${ACCELERATOR_TYPE}"
 #export CUDA_VERSION=11.2
 #export CUDA_VERSION=11.8
+#export CUDA_VERSION=12.0
 export CUDA_VERSION=12.4
 #export CUDA_VERSION=12.4.1
 #export DRIVER_VERSION="460.73.01"

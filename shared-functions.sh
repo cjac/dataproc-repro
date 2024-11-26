@@ -93,7 +93,9 @@ function create_dpgce_cluster() {
     --metadata bigtable-instance="${BIGTABLE_INSTANCE}" \
     --metadata rapids-runtime="DASK" \
     --metadata cuda-version="${CUDA_VERSION}" \
-    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-2-debian12-2024-11-14-20-00" \
+    --image-version "${IMAGE_VERSION}" \
+    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
+    --no-shielded-secure-boot \
     --initialization-action-timeout=90m \
     --optional-components DOCKER \
     --max-idle="${IDLE_TIMEOUT}" \
@@ -103,7 +105,9 @@ function create_dpgce_cluster() {
 
 }
 
+#    --image-version "${IMAGE_VERSION}" \
 #    --no-shielded-secure-boot \
+#    --image "projects/${PROJECT_ID}/global/images/cuda-pre-init-2-1-debian11-2024-11-21-17-00" \
 #Prakasha's properties:
 # --properties="spark:spark.yarn.unmanagedAM.enabled=false,spark:spark.task.resource.gpu.amount=1,spark:spark.executor.cores=1,spark:spark.task.cpus=1,spark:spark.executor.memory=4G"
 #    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
