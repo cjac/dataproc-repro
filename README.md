@@ -22,7 +22,16 @@ This README file describes how to use the dataproc-repro scripts to reproduce
 common Dataproc cluster creation problems relating to the GCE startup script,
 Dataproc startup script, and Dataproc initialization-actions scripts.
 
-## Environment configuration
+## Dataproc on GCE Environment configuration
+
+```
+$ git clone https://github.com/LLC-Technologies-Collier/dataproc-repro.git
+$ cd dataproc-repro
+$ git checkout rapids-mirror-20241115
+$ cp env.json.sample env.json
+$ vi env.json
+$ bash create-dpgce.sh
+```
 
 First, copy env.json.sample to env.json and modify the environment variable
 names and their values in `env.json` to match your environment:
