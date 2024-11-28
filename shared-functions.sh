@@ -62,8 +62,8 @@ function create_dpgce_cluster() {
   time gcloud dataproc clusters create ${CLUSTER_NAME} \
     --secondary-worker-boot-disk-type pd-ssd \
     --single-node \
-    --master-accelerator "type=${MASTER_ACCELERATOR_TYPE}" \
-    --worker-accelerator "type=${PRIMARY_ACCELERATOR_TYPE}" \
+    --master-accelerator "type=${MASTER_ACCELERATOR_TYPE},count=2" \
+    --worker-accelerator "type=${PRIMARY_ACCELERATOR_TYPE},count=2" \
     --master-machine-type "${MASTER_MACHINE_TYPE}" \
     --worker-machine-type "${PRIMARY_MACHINE_TYPE}" \
     --master-boot-disk-size           60 \
@@ -95,6 +95,7 @@ function create_dpgce_cluster() {
     --metadata cuda-version="${CUDA_VERSION}" \
     --image-version "${IMAGE_VERSION}" \
     --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
+    --properties="spark:spark.yarn.unmanagedAM.enabled=false,spark:spark.executor.cores=1,spark:spark.task.cpus=1,spark:spark.executor.memory=4G,spark:spark.executor.resource.gpu.amount=1,spark:spark.executor.resource.gpu.discoveryScript=/usr/lib/spark/scripts/gpu/getGpusResources.sh" \
     --no-shielded-secure-boot \
     --initialization-action-timeout=90m \
     --optional-components DOCKER \
@@ -104,6 +105,8 @@ function create_dpgce_cluster() {
   set +x
 
 }
+
+#    --initialization-actions "${INIT_ACTIONS_ROOT}/gpu/install_gpu_driver.sh" \
 
 #    --image-version "${IMAGE_VERSION}" \
 #    --no-shielded-secure-boot \
