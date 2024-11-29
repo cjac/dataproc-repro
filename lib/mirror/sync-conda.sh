@@ -334,6 +334,7 @@ function prepare_conda_mirror(){
 
   mirror_block="/dev/disk/by-id/google-${RAPIDS_MIRROR_DISK_NAME}"
   mirror_mountpoint="/var/www/html"
+  conda_cache_dir="${mirror_mountpoint}/conda_cache"
   tmp_dir="/mnt/shm"
 
   # clean up after
@@ -347,6 +348,8 @@ function prepare_conda_mirror(){
   install_thin_proxy
   install_screen
   mount_tmp_dir
+  mkdir -p "${conda_cache_dir}"
+  "${CONDA}" config --add pkgs_dirs "${conda_cache_dir}" > /dev/null 2>&1
   install_conda_mirror
 }
 
