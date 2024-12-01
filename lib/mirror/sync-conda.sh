@@ -24,12 +24,31 @@ this_file=$0;
 # In addition, the content will be served from http://$(hostname -s)/
 #
 
+function execute_with_retries() (
+  set +x
+  local -r cmd="$*"
+
+  if [[ "$cmd" =~ "^apt-get install" ]] ; then
+    apt-get -y clean
+    apt-get -y autoremove
+  fi
+  for ((i = 0; i < 3; i++)); do
+    set -x
+    time eval "$cmd" > "${install_log}" 2>&1 && retval=$? || { retval=$? ; cat "${install_log}" ; }
+    set +x
+    if [[ $retval == 0 ]] ; then return 0 ; fi
+    sleep 5
+  done
+  return 1
+)
+
 function install_apache(){
   which a2ensite || \
   apt-get install -y -qq apache2 > /dev/null 2>&1
   a2enmod authz_core
   systemctl enable apache2
   rm -f "${mirror_mountpoint}/index.html"
+  APACHE_INSTALLED=1
 }
 
 function install_thin_proxy(){
@@ -156,7 +175,9 @@ EOF
   chown www-data:www-data /var/www/thin-proxy.psgi
   a2ensite thin-proxy
   mkdir -p /var/log/apache2/thin-proxy
-  systemctl restart apache2
+  if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+    systemctl restart apache2 || echo "could not restart apache2"
+  fi
 }
 
 function mount_tmp_dir(){
@@ -181,8 +202,6 @@ function umount_tmp_dir(){
 
 function install_conda_mirror(){
   if [[ ! -f "${CONDA_MIRROR}" ]] ; then
-#   Maybe update the conda repo before starting
-#    "${CONDA}" update -n base -c defaults conda
     "${CONDA}" install conda-mirror -c conda-forge
   fi
 }
@@ -204,6 +223,12 @@ function attach_conda_mirror_disk(){
 }
 
 function detach_conda_mirror_disk(){
+  # Clean the filesystem
+  current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
+  if [[ "${current_mount_mode}" == "rw" ]] ; then
+    execute_with_retries e2fsck -fy "${mirror_block}"
+  fi
+
   gcloud compute instances detach-disk "$(hostname -s)" \
     --disk       "${RAPIDS_DISK_FQN}" \
     --zone       "${ZONE}" \
@@ -215,42 +240,54 @@ function exit_handler(){
   set +e
   local cleanup_after="$(/usr/share/google/get_metadata_value attributes/cleanup-after || echo '')"
   echo "cleanup_after=${cleanup_after}"
+
+  # If the mirror was not built, do not perform clean up steps
+  if [[ "${MIRROR_BUILT}" != "1" ]]; then return 0 ; fi
+
   case "${cleanup_after}" in
     "y" | "yes" | "true" )
-      # When the script finishes, detach and re-attach the disk in read-only mode
-
-      # stop apache, since it serves http from the mount point
-      systemctl stop apache2 || echo "could not stop apache2"
-      # unmount the rw disk, detach the virtual device
-      umount_mirror_block_device
-      detach_conda_mirror_disk
-      # attach a new device with the same name in ro mode
-      attach_conda_mirror_disk ro
-      mount_mirror_block_device ro
-      # unmount the tmpfs temp directory
-      umount_tmp_dir
-      # bring apache back online to serve a ro copy of the archive via http
-      systemctl restart apache2
-      # Take a snapshot of the archive
-      replica_zones="$(gcloud compute zones list | \
-        perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
-      gcloud compute disks create "${RAPIDS_MIRROR_DISK_NAME}-${timestamp}" \
-        --project="${PROJECT_ID}" \
-	--region="${REGION}" \
-	--source-disk "${RAPIDS_MIRROR_DISK_NAME}" \
-        --source-disk-region="${REGION}" \
-        --replica-zones="${replica_zones}"
-
-      umount_mirror_block_device
-      detach_conda_mirror_disk
-      attach_conda_mirror_disk rw
-      mount_mirror_block_device rw
-      systemctl start apache2
+      echo "cleaning up"
     ;;
     "*" )
-      echo "no operation"
+      echo "no clean-up"
+      return 0
     ;;
   esac
+
+  # When the script finishes, detach and re-attach the disk in read-only mode
+
+  # stop apache, since it serves http from the mount point
+  if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+    systemctl stop apache2 || echo "could not stop apache2"
+  fi
+  # unmount the rw disk, detach the virtual device
+  umount_mirror_block_device
+  detach_conda_mirror_disk
+  # attach a new device with the same name in ro mode
+  attach_conda_mirror_disk ro
+  mount_mirror_block_device ro
+  # unmount the tmpfs temp directory
+  umount_tmp_dir
+  # bring apache back online to serve a ro copy of the archive via http
+  if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+    systemctl restart apache2 || echo "could not restart apache2"
+  fi
+  # Take a snapshot of the archive
+  replica_zones="$(gcloud compute zones list | \
+    perl -e '@l=sort map{/^([^\s]+)/}grep{ /^$ARGV[0]/ } <STDIN>; print(join(q{,},@l[0,1]),$/)' ${REGION})"
+  gcloud compute disks create "${RAPIDS_MIRROR_DISK_NAME}-${timestamp}" \
+    --project="${PROJECT_ID}" \
+    --region="${REGION}" \
+    --source-disk "${RAPIDS_MIRROR_DISK_NAME}" \
+    --source-disk-region="${REGION}" \
+    --replica-zones="${replica_zones}"
+  umount_mirror_block_device
+  detach_conda_mirror_disk
+  attach_conda_mirror_disk rw
+  mount_mirror_block_device rw
+  if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+    systemctl start apache2 || echo "could not start apache2"
+  fi
 }
 
 function mount_conda_mirror_disk() {
@@ -278,8 +315,6 @@ function mount_mirror_block_device(){
     # on the mirror block device
     if e2fsck -n "${mirror_block}" > /dev/null 2>&1 ; then
       if grep -q "${mirror_mountpoint}" /proc/mounts ; then umount_mirror_block_device || echo "could not umount" ; fi
-      echo "ensuring that the filesystem is clean"
-      e2fsck -fy "${mirror_block}" || exit -1
     else
       echo "creating filesystem on mirror block device"
       mkfs.ext4 "${mirror_block}"
@@ -292,7 +327,9 @@ function mount_mirror_block_device(){
     current_mount_mode=$(perl -e '@f=(split(/\s+/, $ARGV[0]));print($f[3]=~/(ro|rw)/);' "$(grep "${mirror_mountpoint}" /proc/mounts)")
     if [[ "${mode}" == "rw" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
-      systemctl stop apache2 || echo "could not stop apache2"
+      if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+        systemctl stop apache2 || echo "could not stop apache2"
+      fi
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk rw
@@ -301,7 +338,9 @@ function mount_mirror_block_device(){
       # have attached to the block device in ro mode
     elif [[ "${mode}" == "ro" && "${current_mount_mode}" == "ro" ]] ; then
       echo "remounting in read/write mode"
-      systemctl stop apache2 || echo "could not stop apache2"
+      if [[ "${APACHE_INSTALLED}" == "1" ]]; then
+        systemctl stop apache2 || echo "could not stop apache2"
+      fi
       umount_mirror_block_device
       detach_conda_mirror_disk
       attach_conda_mirror_disk ro
@@ -327,15 +366,20 @@ function prepare_conda_mirror(){
   ZONE="$(echo $zone | sed -e 's:.*/::')"
   REGION="$(echo ${ZONE} | perl -pe 's/^(.+)-[^-]+$/$1/')"
   PROJECT_ID="$(gcloud config get project)"
-  CONDA="/opt/conda/miniconda3/bin/conda"
+  CONDA_PFX="/opt/conda/miniconda3"
+  CONDA="${CONDA_PFX}/bin/conda"
+  MAMBA="${CONDA_PFX}/bin/mamba"
   CONDA_MIRROR="${CONDA}-mirror"
   RAPIDS_MIRROR_DISK_NAME="rapids-mirror-${REGION}"
   RAPIDS_DISK_FQN="projects/${PROJECT_ID}/regions/${REGION}/disks/${RAPIDS_MIRROR_DISK_NAME}"
+  MIRROR_BUILT=0
+  APACHE_INSTALLED=0
 
   mirror_block="/dev/disk/by-id/google-${RAPIDS_MIRROR_DISK_NAME}"
   mirror_mountpoint="/var/www/html"
   conda_cache_dir="${mirror_mountpoint}/conda_cache"
   tmp_dir="/mnt/shm"
+  install_log="${tmp_dir}/install.log"
 
   # clean up after
   trap exit_handler EXIT
@@ -348,13 +392,52 @@ function prepare_conda_mirror(){
   install_thin_proxy
   install_screen
   mount_tmp_dir
+  # Cache results of build on mirror disk
   mkdir -p "${conda_cache_dir}"
   "${CONDA}" config --add pkgs_dirs "${conda_cache_dir}" > /dev/null 2>&1
-  install_conda_mirror
+  # Unpin conda
+#  sed -i -e 's/^conda .*$//' /opt/conda/miniconda3/conda-meta/pinned
+  #   Maybe update the conda install before starting
+#  "${MAMBA}" update -n base -c defaults conda mamba libmamba libmambapy conda-libmamba-solver
+
+  #install_conda_mirror
+}
+
+function rm_conda_env(){
+  env_name="$1"
+  env_dir="/opt/conda/miniconda3/envs/${env_name}"
+  if test -d "${env_dir}" ; then
+    "${CONDA}" remove -n "${env_name}" --all > /dev/null 2>&1 || rm -rf "${env_dir}"
+  fi
+}
+
+function create_build_cache(){
+
+  CONDA_EXE="${CONDA_PFX}/bin/conda"
+  CONDA_PYTHON_EXE="${CONDA_PFX}/bin/python"
+  PATH="${CONDA_PFX}/bin/condabin:${CONDA_PFX}/bin:${PATH}"
+
+  declare -A specs_to_cache=(
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask<2022.2' 'dask-yarn=0.9' 'distributed<2022.2'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask<2022.2' 'dask-yarn=0.9' 'distributed<2022.2' fiona<1.8.22"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' 'dask<2022.2' 'python>=3.9' 'dask-yarn=0.9' 'distributed<2022.2'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' 'dask<2022.2' 'python>=3.9' 'dask-yarn=0.9' 'distributed<2022.2' 'fiona<1.8.22'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=12,<13' 'dask>=2024.5' 'python>=3.11'"
+    "dask-bigquery dask-ml dask-sql 'cuda-version>=11,<12' dask 'python>=3.9'"
+    "'cuda-version>=12,<13' 'rapids>=23.11' dask cudf numba 'python>=3.11'"
+    "'cuda-version>=12,<13' cuda-cudart tensorflow-gpu[and-cuda] pytorch cudf numba 'python>=3.11'"
+  )
+
+  rm_conda_env myenv
+
+  for spec in "${specs_to_cache[@]}"; do
+    time "${MAMBA}" create -q -m -n "myenv" -y --no-channel-priority -c conda-forge -c nvidia -c rapidsai ${spec}
+    rm_conda_env myenv
+  done
 }
 
 function create_conda_mirror(){
-  time perl '/tmp/conda-mirror/sync-mirror.pl'
+  time perl '/tmp/mirror/sync-conda.pl'
 }
 
 #time "${CONDA_MIRROR}" -v -D \
@@ -449,4 +532,7 @@ readonly timestamp="$(date +%F-%H-%M)"
 
 prepare_conda_mirror
 #create_conda_mirror
+create_build_cache
 #validate_conda_mirror
+
+MIRROR_BUILT=1

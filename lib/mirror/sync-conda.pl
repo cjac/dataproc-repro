@@ -22,7 +22,7 @@ use File::Spec;
 
 my $mech = WWW::Mechanize->new();
 
-my( @url, @skipped )=();
+my( @url, @present )=();
 
 my $mntpt = '/var/www/html';
 
@@ -40,7 +40,7 @@ foreach my $platform ( qw( linux-64 noarch ) ){
     }
     my $repodata = decode_json $mech->response()->decoded_content;
     my @this_url;
-    my @this_skipped;
+    my @this_present;
 
     #    foreach my $pkg ( keys %{$repodata->{packages}}, keys %{$repodata->{'packages.conda'}} ){
     foreach my $repokey ( qw{ packages packages.conda } ){
@@ -94,14 +94,14 @@ $VAR1 = {
 	# my $epoch2017 = 1514764799000;
 	# next if( $pkgobj->{timestamp} < $epoch2017 );
 	if ( -e "${mntpt}/conda.anaconda.org/${channel}/${platform}/${pkg}" ) {
-	  push(@this_skipped, $pkg);
+	  push(@this_present, $pkg);
 	} else {
 	  push(@this_url, "https://conda.anaconda.org/${channel}/${platform}/${pkg}");
 	}
       }
 
-      say( printf('%6i skipped, %6i to fetch', scalar( @this_skipped ), scalar(@this_url) ) );
-      push(@skipped, @this_skipped);
+      say( printf('%6i present, %6i to fetch', scalar( @this_present ), scalar(@this_url) ) );
+      push(@present, @this_present);
       push(@url, @this_url);
     }
   }
@@ -148,10 +148,13 @@ my $num_forks = $nproc * 0.8;
 my($left) = scalar(@url);
 my($buffer_size) = POSIX::ceil($left / $num_forks);
 
-say('-'x80, $/, "total: ", scalar( @skipped ), " skipped, $left to fetch");
+say('-'x80, $/, "total: ", scalar( @present ), " present, $left to fetch");
 
-if( $left > 1000 ){
-  say "running as $num_coroutines coroutines in $num_forks new forked processes";
+if( $left == 0 ){
+  say "all packages present.  Exiting now.";
+  exit 0;
+}elsif( $left > 1000 ){
+  say spritnf('running as %i coroutines in %i new forked processes', $num_coroutines, POSIX::floor( $num_forks ));
   my(@children) = ();
   while ( @url ) {
     $left = scalar(@url);
@@ -179,7 +182,7 @@ if( $left > 1000 ){
   EV::loop;
 }
 
-
+print $/, "Download complete.  Now compressing repodata.json...";
 # Now that we have downloaded all files in the repodata.json files, copy them to the mirror mountpoint
 foreach my $platform ( qw( linux-64 noarch ) ){
   foreach my $channel ( qw(  nvidia rapidsai r main conda-forge  ) ){
@@ -187,7 +190,8 @@ foreach my $platform ( qw( linux-64 noarch ) ){
       ( "/tmp/${channel}-${platform}-repodata.json",
 	"${mntpt}/conda.anaconda.org/${channel}/${platform}/repodata.json" );
     copy $cache_file, $dst_file;
-    qx{zstd  -fk "$dst_file"};
-    qx{bzip2 -fk "$dst_file"};
+    qx{zstd  -fk "$dst_file" > /dev/null 2>&1};
+    qx{bzip2 -fk "$dst_file" > /dev/null 2>&1};
   }
 }
+say "done.";
